@@ -15,6 +15,7 @@
     "@react-native-community/slider": "5.1.2",
     "expo": "~55.0.26",
     "expo-dev-client": "~55.0.35",
+    "expo-splash-screen": "~55.0.21",
     "expo-status-bar": "~55.0.6",
     "react": "19.2.0",
     "react-native": "0.83.6",
