@@ -13,6 +13,7 @@ The single source of truth for Floq's product spec. Frozen. Reference these file
 | `science.md` | Citations for every constant. **Updating a constant requires updating this file.** |
 | `decisions.md` | Locked + open architectural decisions. Read before doing anything ambiguous. |
 | `design-system.md` | Typography, color tokens, themes, phase colors, implementation rules |
+| `tasks.md` | Week-by-week task breakdown for Mohamed and Mustafa, with dependencies and acceptance criteria |
 
 ## How to use this folder
 
