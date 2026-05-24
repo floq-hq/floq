@@ -1,10 +1,13 @@
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { TFLiteSpike } from './components/dev/TFLiteSpike';
 
+// W1 TFLite spike (M1.3) harness. Temporary — replace with the real app shell
+// (Expo Router) once the spike is verified on device.
 export default function App() {
   return (
     <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
+      <TFLiteSpike />
       <StatusBar style="auto" />
     </View>
   );
@@ -16,5 +19,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
+    padding: 16,
   },
 });
