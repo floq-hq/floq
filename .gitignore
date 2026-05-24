@@ -1,0 +1,39 @@
+# ---- OS ----
+.DS_Store
+*.swp
+
+# ---- Node / JS (mobile) ----
+node_modules/
+.expo/
+dist/
+web-build/
+*.tsbuildinfo
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+*.log
+
+# Native build output (managed Expo regenerates these via prebuild)
+/mobile/ios/
+/mobile/android/
+
+# ---- Env / secrets ----
+.env
+.env.*
+!.env.example
+google-services.json
+GoogleService-Info.plist
+
+# ---- Python (ml/) ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.ipynb_checkpoints/
+
+# ---- Test / coverage ----
+coverage/
+
+# ---- Editors ----
+.idea/
