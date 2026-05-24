@@ -19,7 +19,8 @@
             "image": "./assets/splash-oq.png"
           }
         }
-      ]
+      ],
+      "react-native-fast-tflite"
     ],
     "ios": {
       "supportsTablet": true,

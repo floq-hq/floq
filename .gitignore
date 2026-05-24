@@ -32,6 +32,11 @@ venv/
 *.egg-info/
 .ipynb_checkpoints/
 
+# ML spike build artifacts (the .tflite is copied into mobile/assets/models/)
+ml/spike/spike_model.pt
+ml/spike/*.onnx
+ml/spike/tf_out/
+
 # ---- Test / coverage ----
 coverage/
 

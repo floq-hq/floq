@@ -1,0 +1,27 @@
+# Floq ML — pinned deps for the export pipeline.
+# Verified working on macOS arm64 (Apple Silicon) + Python 3.12, 2026-05-24.
+#
+# IMPORTANT — Apple Silicon: the env MUST be native arm64. PyTorch dropped
+# Intel-mac wheels after 2.2.2, so an x86_64 (Rosetta) env can't install
+# torch 2.4.1. If you use conda from an Intel base, create the env arm64:
+#
+#   CONDA_SUBDIR=osx-arm64 conda create -n floq-ml python=3.12 -y
+#   conda run -n floq-ml pip install -r ml/requirements.txt
+#
+# (A plain `python3.12 -m venv` is fine too, as long as python is arm64.)
+# Do NOT use the system Python 3.14 — no stable torch/TF wheels yet.
+
+torch==2.4.1
+onnx==1.16.2
+onnxruntime==1.19.2
+tensorflow==2.17.0
+numpy==1.26.4
+
+# onnx2tf + its companions. onnx2tf does NOT pull these automatically, and it
+# needs the Keras-2 shim because TF 2.16+ defaults to Keras 3.
+onnx2tf==1.26.3
+tf_keras==2.17.0
+onnx_graphsurgeon==0.6.1
+sng4onnx==2.0.1
+simple_onnx_processing_tools==1.1.32
+psutil==7.2.2
