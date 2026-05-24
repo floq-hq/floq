@@ -115,6 +115,38 @@ Pinned exact (no tilde) in mobile/package.json.
 **Owner:** Mohamed
 **Notes:** Revisit post-MVP. May need a "streak grace period" if users complain.
 
+### O7 — Skippable break / enforced-recovery override
+
+**Must resolve by:** End of W3 (when the session screen + recovery enforcement land)
+**Context:** `timer.md` rule #4 says recovery is mandatory — the next session is blocked for the suggested break duration. Real-world need: a user under deadline pressure (e.g. an exam crunch) may want to skip the break.
+**Options:**
+  - **(a) Hard-enforced** (current spec) — next session blocked for the full break duration.
+  - **(b) Skippable with friction** — a "skip break" action exists but shows a recovery-cost warning and is logged. _(recommended)_
+  - **(c) Freely skippable** — one-tap skip, no friction.
+**Owner:** Both (Mustafa UI, Mohamed session-flow/state)
+**Notes:** Does not affect M1.2 — the cold-start formula still *outputs* a recommended break number regardless. This decision only governs whether the session screen enforces it. Raised by Mustafa 2026-05-23.
+
+### O8 — Revisit the 90-minute focus ceiling (and the 15/90, 5/25 clamps)
+
+**Must resolve by:** Post-MVP (not blocking; MVP keeps the current clamps)
+**Context:** The cold-start formula clamps the *recommendation* to 15–90 focus / 5–25 break. The 90 cap is research-backed (`science.md` Fact 3 — Kleitman ultradian). Note: the clamp bounds the *suggested* length, not how long the user can actually focus — there is no auto-stop at 90.
+**Options:**
+  - **(a) Keep 15–90 / 5–25** (current, research-backed) — _(default)_
+  - **(b) Raise or remove the upper ceiling** — requires a new citation and risks recommending fatiguing sessions.
+**Owner:** Mohamed
+**Notes:** These are FROZEN constants (CLAUDE.md safety rules). Any change must update `science.md` with a new source and supersede this entry. Raised by Mustafa 2026-05-23.
+
+### O9 — Fallback "classic" (non-flow) timer mode
+
+**Must resolve by:** Post-MVP (new feature, out of MVP scope)
+**Context:** Offer users who don't want the adaptive flow-science system a plain fixed-duration timer.
+**⚠️ Conflicts with L5** ("Pomodoro is wrong for cognitive work") and the central design claim in `science.md` ("if you find yourself adding a 25-minute hard cap, you are building a different product"). Adopting this would require a new Locked entry that supersedes/qualifies L5.
+**Options:**
+  - **(a) No classic mode** (current) — the adaptive flow timer *is* the product. _(default for MVP)_
+  - **(b) Opt-in classic/fixed-duration timer** — a settings toggle + a second timer path.
+**Owner:** Both
+**Notes:** Out of MVP scope. If pursued, write the superseding decision before any implementation. Raised by Mustafa 2026-05-23.
+
 ---
 
 ## Decisions to revisit post-MVP (not now)
