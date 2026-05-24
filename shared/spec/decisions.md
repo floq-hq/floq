@@ -62,16 +62,38 @@ plus a Nitro-based native module. Re-evaluate upgrade to SDK 56 post-MVP, once
 it's stable and react-native-fast-tflite has confirmed compatibility.
 Pinned exact (no tilde) in mobile/package.json.
 
+### L10 — LLM provider: free-tier fallback chain (resolves O1)
+
+**Date locked:** 2026-05-24
+**Decision:** No single provider. `parseTasks(input)` is provider-agnostic and tries a waterfall of **permanent free tiers**, each falling back to the next on rate-limit/error:
+
+> Gemini Flash (primary) → Groq (Llama) → OpenRouter `:free` → manual entry.
+
+**Reasoning (live data, 2026-05-24):**
+- OpenAI and Anthropic have **no usable permanent free tier** (OpenAI ~3 RPM + free trial credits discontinued; Anthropic $5 one-time console credits only) — both excluded from the free chain.
+- **Gemini (AI Studio):** ~15 RPM, ~1M tokens/day, ~1,500 req/day, permanent, no card — most generous; alone covers all of beta (<50 users).
+- **Groq:** 30 RPM / 6K TPM / up to 14,400 req/day, very fast (open-source Llama models).
+- **OpenRouter:** ~28 `:free` models, 20 RPM, 50 req/day (<$10 credits) → 1,000/day after.
+- No reputable hosted LLM is free *and* unlimited. "Unlimited" proxies (ApiFreeLLM, Puter.js) route user task text through unvetted third parties — **rejected on privacy grounds** (conflicts with L4). Self-hosting (Ollama) is the only truly-unlimited path; post-MVP option if free tiers choke.
+- `llm_cache/{hash}` (see `schema.md`) reduces calls further.
+
+**Implementation:** chain config + provider-agnostic `parseTasks()` scaffolded in `mobile/services/llm/provider.ts`; HTTP calls + zod validation land in **M2.3**. ⚠️ M2.3 must decide **client-direct vs cloud-function proxy** — embedding provider keys in the client bundle exposes them; prefer a proxy, or accept the beta risk explicitly.
+
+**Sources:** apiscout.dev free-ai-apis-developers-2026 · pecollective.com Gemini free-tier guide · tokenmix.ai Groq free-tier-limits-2026 · costgoat.com openrouter-free-models · github.com/cheahjs/free-llm-api-resources
+
+### L11 — Mohamed's Egypt plan: normal schedule (resolves O3)
+
+**Date locked:** 2026-05-24
+**Decision:** No special plan or async-gap mitigation needed. Mohamed works a **normal schedule** from Egypt (June–August) with no expected disruption to velocity. The weekly plan in `tasks.md` proceeds unchanged.
+**Reasoning:** The original concern (a focus gap during travel) does not materialize — Mohamed confirmed normal availability. The front-loading already done (M1.2 cold-start, M1.3 TFLite spike) stands as insurance, not as a forced mitigation. The "Egypt gap mitigation" section in `tasks.md` is retained as a safety net but is not driving scheduling. The W3 TFLite spike was non-negotiable regardless and is ✅ done (M1.3).
+
 ---
 
 ## Open decisions — must resolve by end of W1
 
-### O1 — LLM provider: Anthropic vs OpenAI free tier
+### O1 — LLM provider ✅ RESOLVED (2026-05-24)
 
-**Must resolve by:** End of W1
-**Default if not resolved:** Spike both, pick the one with the higher free-tier rate limit. Lock here and in `mobile/services/llm/provider.ts`.
-**Owner:** Mohamed
-**Notes:** Whichever wins, the LLM service must be provider-agnostic at the call site (one `parseTasks(input)` function).
+Moved to Locked — see **L10**. Outcome: a free-tier fallback chain (Gemini → Groq → OpenRouter), not a single provider. OpenAI/Anthropic dropped — no usable permanent free tier.
 
 ### O2 — Expo SDK version to pin
 
@@ -79,14 +101,9 @@ Pinned exact (no tilde) in mobile/package.json.
 **Default if not resolved:** Latest stable that supports `react-native-fast-tflite`. Lock the exact version in `mobile/package.json` and here.
 **Owner:** Mustafa
 
-### O3 — Mohamed's Egypt plan (June–August)
+### O3 — Mohamed's Egypt plan ✅ RESOLVED (2026-05-24)
 
-**Must resolve by:** End of W1
-**Options:**
-  - **(a) Sprint to TestFlight before he leaves** — only viable if departure is after W8. Likely not viable.
-  - **(b) Front-load architecture + ML spike, Mustafa builds UI async while Mohamed is gone, ML model v1 deferred to post-return.** This is the recommended option.
-**Owner:** Both
-**Notes:** Whichever option is picked, the TFLite spike in W3 is non-negotiable — without it, the entire ML deployment path is uncertain.
+Moved to Locked — see **L11**. Outcome: normal schedule, no gap, no special mitigation.
 
 ### O4 — Background-during-session policy
 
