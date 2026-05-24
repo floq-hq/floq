@@ -33,7 +33,7 @@ def main() -> None:
     # 1. Load the seeded dummy model.
     model = build_model()
     if PT_PATH.exists():
-        model.load_state_dict(torch.load(PT_PATH))
+        model.load_state_dict(torch.load(PT_PATH, weights_only=True))
     model.eval()
 
     # 2. One fixed input, reused for export and the parity check.

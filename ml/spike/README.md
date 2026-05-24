@@ -7,23 +7,28 @@ This is a throwaway dummy model (untrained, 5-layer MLP, 13-dim input per
 `ml/MODEL_SPEC.md`). We only care that it converts, bundles, loads, and runs
 fast on device.
 
-## A. Generate the model (your machine — needs a Python 3.11/3.12 venv)
+## A. Generate the model (your machine — needs a Python 3.12 env)
 
-> The repo's system Python is 3.14, which has no stable PyTorch/TensorFlow
-> wheels yet. Use an isolated 3.11/3.12 env.
+> Don't use the repo's system Python 3.14 (no stable torch/TF wheels).
+>
+> **Apple Silicon:** the env must be **native arm64** — torch dropped Intel-mac
+> wheels after 2.2.2, so an x86_64/Rosetta env fails on `torch==2.4.1`. Verify
+> with `python -c "import platform; print(platform.machine())"` → must say
+> `arm64`. From an Intel base conda, force it:
 
 ```bash
-cd ml
-python3.12 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+# verified working setup (macOS arm64, 2026-05-24)
+CONDA_SUBDIR=osx-arm64 conda create -n floq-ml python=3.12 -y
+conda run -n floq-ml pip install -r ml/requirements.txt   # includes onnx2tf + tf_keras companions
 
-python spike/dummy_model.py     # -> spike/spike_model.pt
-python spike/export.py          # -> spike/spike.onnx, spike/tf_out/, and
-                                 #    mobile/assets/models/spike.tflite
+conda run -n floq-ml python ml/spike/dummy_model.py   # -> spike/spike_model.pt
+conda run -n floq-ml python ml/spike/export.py        # -> spike.onnx, tf_out/, and
+                                                      #    mobile/assets/models/spike.tflite
 ```
 
 `export.py` asserts **PyTorch vs TFLite max abs diff < 1e-2** and prints the
 model size. If it prints `parity OK` and copies `spike.tflite`, step A passed.
+(Verified: max abs diff ≈ 4e-08, spike.tflite ≈ 18 KB.)
 
 INT8 quantization and the <500 KB size budget are deferred to the real model
 (M5.3) — see `ml/MODEL_SPEC.md`.
