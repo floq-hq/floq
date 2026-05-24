@@ -14,6 +14,7 @@ Full product spec lives in `shared/spec/`. The most important specs are:
 - `shared/spec/session-flow.md` — user journey, behavioral rules
 - `shared/spec/decisions.md` — locked decisions + open ones (read before assuming)
 - `shared/spec/design-system.md` — typography, color tokens, themes, phase colors, implementation rules
+- `shared/spec/tasks.md` - it have all the tasks and implementation plan
 
 
 When implementing anything timer- or ML-related, load the relevant spec file first via `@shared/spec/<file>.md`. Do not re-derive the formulas from memory.
