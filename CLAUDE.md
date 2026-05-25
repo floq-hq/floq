@@ -12,6 +12,7 @@ Full product spec lives in `shared/spec/`. The most important specs are:
 - `shared/spec/ml-regimes.md` — three-regime router (cold / warming / mature)
 - `shared/spec/onboarding.md` — Q1–Q4 seed questions
 - `shared/spec/session-flow.md` — user journey, behavioral rules
+- `shared/spec/task-queue.md` — the user-task feature: model, capture (brain-dump + manual), CRUD, one-visible queue, lifecycle, persistence
 - `shared/spec/decisions.md` — locked decisions + open ones (read before assuming)
 - `shared/spec/design-system.md` — typography, color tokens, themes, phase colors, implementation rules
 - `shared/spec/tasks.md` - it have all the tasks and implementation plan
@@ -83,6 +84,7 @@ Do not introduce alternatives without explicit approval. No Redux, no styled-com
 - Cold-start formula lives in `mobile/services/timer/coldStart.ts`. The constants (60, 0.85, 0.22, 23, clamp bounds 15/90 and 5/25) come from research and are **frozen** — see Safety Rules below.
 - All LLM responses must be validated with `zod` before use. If validation fails, fall back to manual entry. Never let unvalidated JSON reach the UI.
 - One visible task at a time. Hidden tasks are queried on demand, not preloaded.
+- Task queue is first-class and persisted: `stores/useTaskStore.ts` (Zustand) → `services/tasks/` (pure queue + MMKV) → `services/storage/tasks.ts` (SQLite, W4) → Firestore mirror. Two creation paths — LLM brain-dump and an understated manual entry — both first-class; full CRUD. See `decisions.md` L14.
 - No paused sessions. App backgrounded > 30s while in a session = log one distraction (pending confirmation in `decisions.md`).
 - Phase indicator is a pure state machine: `(elapsedSeconds, sessionPlan) → phase`. No timers inside it.
 - The timer recomputes recommendation **at session start**, not once per day.

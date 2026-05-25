@@ -37,14 +37,30 @@ Lives in `mobile/theme/`. Full spec — typography, color tokens, dual themes, p
 
 Build the design system in W1 before any screens. The blueprint flags this as critical — RN apps look generic without it.
 
+## Task model
+
+The task queue is a first-class, persisted entity. Keep the logic off the screens (per "Don't put business logic in screens" below):
+
+- `stores/useTaskStore.ts` — Zustand store; the single in-app source of truth for the queue.
+- `services/tasks/queue.ts` — **pure** queue logic (`reorder`, `promoteNext`, `markDone`, `topTask`, `hiddenCount`). Zero React, unit-tested.
+- `services/tasks/persist.ts` — MMKV atomic blob `floq.tasks`. Source of truth until W4.
+- `services/storage/tasks.ts` — SQLite CRUD (W4, M4.2). Becomes the source of truth; MMKV demotes to a fast-read cache; async mirror to Firestore `users/{uid}/tasks` (owner-only — see the `floq-firestore` skill).
+
+Two creation paths, **both first-class** (manual is understated, not a fallback):
+
+- LLM brain-dump → `parseTasks()` → `addTasks(ParsedTask[])`.
+- Manual entry → `ManualTaskForm` → `addTask(input)`.
+
+Full CRUD: create / read (`topTask` + `+N hidden`) / update (edit fields, reorder, `markDone`) / delete. One task visible at a time; on Done, `markDone(topTaskId)` auto-promotes the next (see `shared/spec/session-flow.md` §Task promotion). Task titles are private — never synced to `social`. Full feature spec: `shared/spec/task-queue.md` (decision of record: `decisions.md` L14).
+
 ## Screen-specific notes
 
 ### Home
 - Single task visible at top — title, est. minutes, difficulty pill.
-- Hint text if more tasks exist: `+3 hidden`.
+- Hint text if more tasks exist: `+3 hidden` — tapping it opens the queue sheet (edit / delete / reorder).
 - Streak counter, top right.
 - Large `START SESSION` button.
-- Brain-dump entry via `+` button (modal with text input + voice).
+- Task entry via `+`: brain-dump (LLM, primary) **and** an understated manual-add option. Both first-class (see Task model above).
 
 ### Session
 - Phase indicator pill at top, color follows `theme.colors.phase[currentPhase]`.
@@ -76,9 +92,9 @@ Content lives in `app/_session-intro.tsx` and the copy is in `shared/spec/onboar
 
 ## Empty / error states (don't skip)
 
-- No tasks → friendly nudge to brain-dump.
+- No tasks → friendly nudge to brain-dump (or add one manually).
 - Offline → cached tasks visible, sync indicator.
-- LLM failure → fall back to manual task entry form.
+- LLM failure → the same `ManualTaskForm` used for first-class manual add (not a one-off fallback form).
 - No friends yet → empty leaderboard with "add a friend" CTA.
 - Cold regime → "learning your rhythm" badge on stats.
 
