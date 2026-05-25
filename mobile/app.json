@@ -3,6 +3,7 @@
     "name": "floq",
     "slug": "floq",
     "version": "1.0.0",
+    "scheme": "floq",
     "orientation": "portrait",
     "icon": "./assets/icon-light.png",
     "userInterfaceStyle": "automatic",
@@ -26,7 +27,8 @@
         {
           "iosUrlScheme": "com.googleusercontent.apps.1058460931992-t3baiop5eu0lo2vbklam62papl6v1ooa"
         }
-      ]
+      ],
+      "expo-router"
     ],
     "ios": {
       "supportsTablet": true,
