@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@react-native-community/slider": "5.1.2",
+    "@react-native-google-signin/google-signin": "^16.1.2",
     "expo": "~55.0.26",
     "expo-dev-client": "~55.0.35",
     "expo-splash-screen": "~55.0.21",
