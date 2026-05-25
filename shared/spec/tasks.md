@@ -220,6 +220,24 @@ Goal by end of week: a user can sign up, complete onboarding, brain-dump tasks v
 - Sign-out clears Zustand stores + MMKV (but not the LLM cache — that's fine)
 - `users/{uid}` doc is created with skeleton fields on first sign-up via a cloud function trigger (or client-side write — pick one and document in `decisions.md`)
 
+### M2.5 🔴 Task store + queue + CRUD service
+**Depends on:** M1.1 (mirrors M2.2's MMKV atomic-write pattern)
+**Unblocks:** S2.4, S2.6, S3.3; extended by M4.2 (SQLite + Firestore mirror)
+**Skill:** `floq-storage`
+**Spec references:** `@shared/spec/task-queue.md`, `decisions.md` L14
+**Files:**
+- `mobile/services/tasks/types.ts` — `Task = { id, title, difficulty: 1..5, estMinutes, order, done, createdAt }`
+- `mobile/services/tasks/queue.ts` — **pure** functions: `reorder`, `promoteNext`, `markDone`, `topTask`, `hiddenCount`. Zero React imports.
+- `mobile/services/tasks/persist.ts` — MMKV atomic blob `floq.tasks` (source of truth until W4)
+- `mobile/stores/useTaskStore.ts` — Zustand store wrapping the queue: `addTasks(ParsedTask[])`, `addTask(input)`, `updateTask(id, patch)`, `reorder`, `markDone`, `removeTask`, + `topTask` / `hiddenCount` selectors
+- `mobile/services/tasks/__tests__/queue.test.ts`
+**Acceptance:**
+- Full CRUD: create (`addTasks` batch + `addTask` single) · read (`topTask` + `hiddenCount`) · update (edit fields, `reorder`, `markDone`) · delete (`removeTask`)
+- Every op writes the MMKV blob atomically and survives an app kill (log 3 tasks, kill, reopen — still there)
+- `markDone(id)` removes the current task and auto-promotes the next, per `session-flow.md` §Task promotion
+- Pure `queue.ts` functions unit-tested; `pnpm test` (or `npm test`) green
+- Zero React imports in `queue.ts`
+
 ---
 
 ## Mustafa — W2
@@ -283,18 +301,20 @@ Goal by end of week: a user can sign up, complete onboarding, brain-dump tasks v
 - Empty state when no tasks: friendly nudge ("Brain-dump what you need to do today")
 
 ### S2.4 🔴 Brain-dump modal + parsed-task list
-**Depends on:** S2.3, M2.3
-**Unblocks:** S3.0 (start session needs a top task)
+**Depends on:** S2.3, M2.3, M2.5
+**Unblocks:** S2.6, S3.0 (start session needs a top task)
 **Skill:** none
+**Spec references:** `@shared/spec/task-queue.md`
 **Files:**
 - `mobile/components/BrainDumpModal.tsx`
 - `mobile/components/ParsedTaskList.tsx` — drag-to-reorder list, shows task title + est-minutes + difficulty
+- `mobile/components/ManualTaskForm.tsx` — text + duration picker + difficulty buttons; reused by S2.6 (first-class manual add) and as the LLM-failure path
 **Acceptance:**
 - Text input + (optional later) voice input
 - On submit: calls `parseTasks()`, shows loading state
 - On success: shows the parsed task list with drag-to-reorder
-- On failure (parse / rate-limit): shows a "let's add this manually" fallback form with text + duration picker + difficulty buttons
-- "Save" persists to Zustand task store (Mohamed adds SQLite persistence in W4)
+- On failure (parse / rate-limit): shows `ManualTaskForm` (the *same* component used for first-class manual add in S2.6 — not a one-off fallback)
+- "Save" persists via `useTaskStore.addTasks()` (M2.5); SQLite persistence lands in W4 (M4.2)
 
 ### S2.5 🟡 First-session framing card
 **Depends on:** S1.3
@@ -310,6 +330,19 @@ Goal by end of week: a user can sign up, complete onboarding, brain-dump tasks v
 - Final step has "Got it, let's go" button which sets `has_seen_intro: true` and dismisses
 - Re-accessible via info icon on session screen (read-only mode)
 - Copy matches the spec verbatim
+
+### S2.6 🔴 Manual task add + task management UI
+**Depends on:** S2.3, S2.4 (reuses `ManualTaskForm` + `ParsedTaskList`), M2.5
+**Unblocks:** —
+**Skill:** none
+**Spec references:** `@shared/spec/task-queue.md`, `decisions.md` L14
+**Files:**
+- `mobile/components/TaskQueueSheet.tsx` — full-queue management sheet
+**Acceptance:**
+- **Understated** manual-add entry (per L14 — a low-prominence "add manually" affordance, not a button competing with brain-dump)
+- Tapping the Home **"+N hidden"** caption opens `TaskQueueSheet`: full task list with **edit** (tap → `ManualTaskForm`), **delete** (swipe), **reorder** (drag) — all calling `useTaskStore`
+- Manual add and LLM brain-dump are both first-class paths into the same store
+- Renders in both themes; empty state matches S4.3
 
 ---
 
@@ -405,13 +438,14 @@ Goal by end of week: a user can start a session, see the phase indicator move th
 - Visual feedback: button briefly flashes `danger` color background, then returns
 
 ### S3.3 🔴 Done button + session-end summary
-**Depends on:** S3.1, M3.2
+**Depends on:** S3.1, M3.2, M2.5
 **Unblocks:** M4.1 (focus score), S4.1 (stats screen)
 **Skill:** none
 **Files:**
 - `mobile/app/session-summary.tsx`
 **Acceptance:**
 - Done button writes session to Firestore via Mohamed's persistence layer
+- On Done: `useTaskStore.markDone(topTaskId)` removes the current task and auto-promotes the next (per `session-flow.md` §Task promotion)
 - Navigates to summary screen showing: minutes focused, distractions, focus score, streak update, recovery countdown
 - Auto-dismisses to recovery state after 8s OR on tap
 
@@ -439,16 +473,19 @@ Goal by end of week: completed sessions have a focus score, sessions persist to 
 - Test cases from `floq-timer` skill all pass (60min/0 distractions/diff3=60; 60min/1 distraction/diff3=37; etc.)
 - Negative scores allowed (not clamped)
 
-### M4.2 🔴 SQLite session persistence
-**Depends on:** M3.3
-**Skill:** none (consider `floq-storage` skill if it gets complex)
+### M4.2 🔴 SQLite session + task persistence
+**Depends on:** M3.3, M2.5 (migrates the task store's source of truth MMKV → SQLite)
+**Skill:** `floq-storage`
 **Files:**
 - `mobile/models/schema.sql` — sessions, tasks, distractions tables
 - `mobile/models/migrations/001_initial.ts`
-- `mobile/services/storage/sessions.ts` — CRUD layer
+- `mobile/services/storage/sessions.ts` — session CRUD layer
+- `mobile/services/storage/tasks.ts` — task CRUD layer (add, update, reorder, markDone, remove)
 **Acceptance:**
 - Sessions written to SQLite on session end (mirrored to Firestore async)
 - `getRecentSessions(n=20)` returns sorted by ended_at desc
+- Tasks persisted to SQLite; `useTaskStore` swaps source-of-truth MMKV → SQLite (MMKV demotes to a fast-read cache); the M2.5 store API and its tests are unchanged
+- Tasks mirrored async to Firestore `users/{uid}/tasks` (owner-only); un-provisions that section in `schema.md`
 - Schema migrations run on app start; never edit schema in place — always migrate (per root CLAUDE.md)
 
 ### M4.3 🔴 Stats data layer

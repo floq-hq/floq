@@ -128,6 +128,28 @@ Pinned exact (no tilde) in mobile/package.json.
 
 **Implementation:** M2.4 — `services/firebase/auth.ts` (methods + `useCurrentUser`), `userDoc.ts` (skeleton), `authStorage.ts` (MMKV persistence), `routing.ts` (`resolveStartRoute`).
 
+### L14 — Task model: brain-dump + understated manual entry, full CRUD, M→S split
+
+**Date locked:** 2026-05-25
+**Decision:** Tasks are a first-class, persisted entity with **full CRUD** and **two co-equal creation paths** — LLM brain-dump (prominent) and **manual entry** (deliberately understated, *not* an LLM-failure fallback). The data layer is owned by **M** (Mohamed); the add/manage UI by **S** (Mustafa) — a sequential M→S handoff.
+
+**Why (the gap this closes):** The original plan specified task *creation* via the LLM (M2.3) plus a manual *fallback* shown only on LLM failure (S2.4), but left the queue store, persistence, CRUD, and lifecycle **unowned** — no `useTaskStore` task existed, M4.2 covered sessions only, and `session-flow.md` §"Task promotion" had no implementer. This entry makes the task feature explicit and owned.
+
+**CRUD shape:**
+- **Create** — `addTasks(ParsedTask[])` (LLM batch) and `addTask(input)` (single manual).
+- **Read** — `topTask` + `hiddenCount` selectors (drive Home's "one visible / +N hidden").
+- **Update** — edit `title` / `difficulty` / `est_minutes`, `reorder`, `markDone`.
+- **Delete** — `removeTask`.
+- **Lifecycle** — on Done, `markDone(topTaskId)` removes the current task and auto-promotes the next, per `session-flow.md` §Task promotion.
+
+**Phasing (matches the W2/W4 split already implied by S2.4's note):**
+- **W2 (M2.5):** Zustand `useTaskStore` + pure `services/tasks/queue.ts` + MMKV atomic blob `floq.tasks` (mirrors M2.2 onboarding). MMKV is the source of truth.
+- **W4 (M4.2, extended):** SQLite `services/storage/tasks.ts` becomes the source of truth; MMKV demotes to a fast-read cache; async mirror to Firestore `users/{uid}/tasks` (owner-only). `schema.md` un-provisions that collection then.
+
+**Privacy invariant (unchanged, per L4):** task titles never leave the device to friends / `social`; the `users/{uid}/tasks` mirror is owner-only.
+
+**Implementation:** new **M2.5** (data layer) + **S2.6** (manual-add + CRUD UI); **M4.2** extended to "session **+ task** persistence"; **S2.4** / **S3.3** acceptance tightened. UI surfaces: a shared `ManualTaskForm` (used by both first-class manual add and the LLM-failure path) + a `TaskQueueSheet` opened from the "+N hidden" caption.
+
 ---
 
 ## Open decisions — must resolve by end of W1

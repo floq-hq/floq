@@ -75,6 +75,22 @@ Append-only. Never edit a completed session.
 }
 ```
 
+### `users/{uid}/tasks/{taskId}`
+
+The current task queue. **Owner-only** (security rules #1/#3) — never readable by friends, never synced to `social`. Mirror of the local SQLite `tasks` table; written client-side and async on change (no cloud function). Source of truth: M2.5 (Zustand + MMKV) → M4.2 (SQLite + this Firestore mirror).
+
+```ts
+{
+  id: string;
+  title: string;                 // PRIVATE — never written to social
+  difficulty: 1|2|3|4|5;
+  est_minutes: number;
+  order: number;                 // queue position
+  done: boolean;                 // defaults false
+  created_at: Timestamp;
+}
+```
+
 ### `users/{uid}/social`
 
 The only thing friends can read. Never write task titles here.
@@ -108,6 +124,7 @@ The full rules live in `backend/firestore.rules`. Principles you must follow:
 |---|---|
 | Sign up | Client (Firebase Auth) + cloud function trigger to create `users/{uid}` skeleton |
 | Save session | Client (write own subcollection) + cloud function trigger to update `social` doc |
+| Save / sync task queue | Client (write own `tasks` subcollection), async — no cloud function |
 | Send friend request | Client → `friend_requests/{requestId}` |
 | Accept friend request | Cloud function — creates `friendships/{pairId}`, deletes the request |
 | Compute weekly focus score | Cloud function on a schedule, updates `social.weekly_focus_score` |
