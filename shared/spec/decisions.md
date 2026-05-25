@@ -107,6 +107,27 @@ Pinned exact (no tilde) in mobile/package.json.
 
 **Implementation:** M2.3 — HTTP in `provider.ts` (`callProvider`), orchestration in `parseTasks.ts`, zod validation in `types.ts`, cache in `cache.ts`, system prompt in `prompts.ts`.
 
+### L13 — Auth: email + Google live, Apple + phone deferred; client-side skeleton write (resolves the M2.4 "pick one" sub-decision)
+
+**Date locked:** 2026-05-25
+**Decision:** M2.4 ships **email/password + Google** sign-in. **Apple and phone are scaffolded** (the functions exist and throw `AuthNotConfiguredError` until enabled). The `users/{uid}` skeleton doc is created **client-side** on first sign-in — no Cloud Function.
+
+**Method scope + why:**
+- **Email/password** — live. The only method needing zero native work (pure Firebase JS SDK), so it unblocks Mustafa's S2.0 immediately and is verifiable on the current dev client.
+- **Google** — live, native. Free of charge, but requires the `@react-native-google-signin/google-signin` dep + a dev-client rebuild + OAuth client IDs configured in Firebase/Google Cloud. Token flow: native `signIn()` → `GoogleAuthProvider.credential(idToken)` → `signInWithCredential`.
+- **Apple** — **deferred** until the $99 Apple Developer Program membership is active (needed for the Sign-in-with-Apple capability *and* the W8 TestFlight ship regardless). Deliberately **not** installing `expo-apple-authentication` yet: adding the entitlement (`ios.usesAppleSignIn`) before the membership can block device builds. Real impl is in a comment block in `auth.ts`.
+- **Phone** — **deferred**. Not cleanly free: SMS is billed per-message on the **Blaze** plan (small, region-limited free allowance), and the JS-SDK RN reCAPTCHA path is deprecated/unmaintained. Revisit post-MVP, likely via `@react-native-firebase`.
+
+**Skeleton write: client-side (not a Cloud Function).** On first sign-in `ensureUserDoc()` writes the `users/{uid}` skeleton (`uid, email, display_name, created_at, has_seen_intro:false, privacy:'private'`, + `apple_id?`) only if the doc is missing. Chosen because: (a) a Cloud Function trigger needs the **Blaze** plan — contradicts staying free; (b) the M2.2 owner-only rule already authorizes it (the user is authed right after create); (c) no cold starts, works offline. Trade-off: a `users/{uid}` doc is created only when the user opens *our* app (fine — there is no other entry point in MVP).
+
+**Persistence:** Firebase JS SDK `initializeAuth` + `getReactNativePersistence` backed by an **MMKV adapter** (`services/firebase/authStorage.ts`), avoiding an `@react-native-async-storage/async-storage` dependency. `getReactNativePersistence` is reached via a typed cast (RN-only export, absent from the web types tsc resolves).
+
+**Sign-out teardown:** `signOut()` = `firebaseSignOut` + best-effort Google revoke + reset of Zustand stores / app MMKV keys. The **LLM cache (`floq.llmCache.*`) is intentionally preserved** (derived, non-PII, survives account switches).
+
+**Revisit before public launch:** evaluate a Cloud Function `onCreate` trigger as a backstop if non-app signup paths ever exist; reconsider phone via `@react-native-firebase` if demanded.
+
+**Implementation:** M2.4 — `services/firebase/auth.ts` (methods + `useCurrentUser`), `userDoc.ts` (skeleton), `authStorage.ts` (MMKV persistence), `routing.ts` (`resolveStartRoute`).
+
 ---
 
 ## Open decisions — must resolve by end of W1

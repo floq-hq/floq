@@ -3,12 +3,13 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ThemeProvider } from './theme';
 import { ComponentsPreview } from './components/dev/ComponentsPreview';
 import { TFLiteSpike } from './components/dev/TFLiteSpike';
+import { AuthHarness } from './components/dev/AuthHarness';
 
 // Temporary dev entry until Expo Router lands (S2.2). Both children are dev-only
 // kitchen sinks; the switcher just lets us flip between Mustafa's UI primitives
 // (S1.3) and the M1.3 TFLite spike without either clobbering the other. A release
 // build would render the real app root here instead.
-type Harness = 'ui' | 'tflite';
+type Harness = 'ui' | 'tflite' | 'auth';
 
 export default function App() {
   const [harness, setHarness] = useState<Harness>('ui');
@@ -26,9 +27,20 @@ export default function App() {
             active={harness === 'tflite'}
             onPress={() => setHarness('tflite')}
           />
+          <DevTab
+            label="Auth"
+            active={harness === 'auth'}
+            onPress={() => setHarness('auth')}
+          />
         </View>
         <View style={styles.body}>
-          {harness === 'ui' ? <ComponentsPreview /> : <TFLiteSpike />}
+          {harness === 'ui' ? (
+            <ComponentsPreview />
+          ) : harness === 'tflite' ? (
+            <TFLiteSpike />
+          ) : (
+            <AuthHarness />
+          )}
         </View>
       </View>
     </ThemeProvider>

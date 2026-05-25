@@ -20,7 +20,13 @@
           }
         }
       ],
-      "react-native-fast-tflite"
+      "react-native-fast-tflite",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.1058460931992-t3baiop5eu0lo2vbklam62papl6v1ooa"
+        }
+      ]
     ],
     "ios": {
       "supportsTablet": true,
