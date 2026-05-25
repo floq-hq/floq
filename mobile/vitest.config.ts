@@ -2,8 +2,12 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    // The timer service is a pure leaf — no RN/jsdom environment needed.
+    // Pure-logic leaves (timer/onboarding services, Zustand stores) — no
+    // RN/jsdom environment needed. UI component tests would need their own setup.
     environment: 'node',
-    include: ['services/**/__tests__/**/*.test.ts'],
+    include: [
+      'services/**/__tests__/**/*.test.ts',
+      'stores/**/__tests__/**/*.test.ts',
+    ],
   },
 });
