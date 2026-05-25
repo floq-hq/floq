@@ -36,3 +36,13 @@ export interface SessionPlan {
   breakMinutes: number;
   regime: 'cold' | 'warming' | 'mature';
 }
+
+// One completed session's behavioral outcome, fed to the warming blend.
+// Sourced from session history (SQLite, M4.2). `focusMinutes` is the actual
+// focused minutes the user achieved, not the recommended plan.
+export interface BehavioralSession {
+  focusMinutes: number;
+  hourBucket: HourBucket;
+  useCase: OnboardingSeed['use_case']; // = task_type, for the matching filter
+  endedAt: number; // epoch ms, for recency ordering
+}
