@@ -1,7 +1,7 @@
 /**
- * Kitchen-sink preview for the UI primitives (S1.3). Dev-only — rendered behind
- * `__DEV__` from `App.tsx`. When Expo Router lands (S2.2) this moves to
- * `app/_dev/components.tsx` unchanged.
+ * Kitchen-sink preview for the UI primitives (S1.3). Dev-only — rendered from
+ * the `app/dev.tsx` route (reachable at /dev in a dev build), not linked from
+ * the app UI.
  *
  * The theme toggle at the top is the real `SegmentedControl` primitive, so this
  * screen also serves as the "renders correctly in both themes" check: flip it

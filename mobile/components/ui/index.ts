@@ -8,3 +8,4 @@ export {
   type SegmentedControlOption,
 } from './SegmentedControl';
 export { Slider, type SliderProps } from './Slider';
+export { TextField, type TextFieldProps } from './TextField';

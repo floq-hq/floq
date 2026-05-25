@@ -1,7 +1,7 @@
 {
   "name": "mobile",
   "version": "1.0.0",
-  "main": "index.ts",
+  "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
@@ -16,6 +16,7 @@
     "@react-native-google-signin/google-signin": "^16.1.2",
     "expo": "~55.0.26",
     "expo-dev-client": "~55.0.35",
+    "expo-router": "~55.0.16",
     "expo-splash-screen": "~55.0.21",
     "expo-status-bar": "~55.0.6",
     "firebase": "^12.13.0",
@@ -25,6 +26,8 @@
     "react-native-fast-tflite": "^3.0.1",
     "react-native-mmkv": "^4.3.1",
     "react-native-nitro-modules": "^0.35.7",
+    "react-native-safe-area-context": "~5.6.2",
+    "react-native-screens": "~4.23.0",
     "zod": "^4.4.3",
     "zustand": "^5.0.13"
   },
