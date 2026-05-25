@@ -28,7 +28,8 @@
           "iosUrlScheme": "com.googleusercontent.apps.1058460931992-t3baiop5eu0lo2vbklam62papl6v1ooa"
         }
       ],
-      "expo-router"
+      "expo-router",
+      "expo-font"
     ],
     "ios": {
       "supportsTablet": true,
