@@ -87,6 +87,26 @@ Pinned exact (no tilde) in mobile/package.json.
 **Decision:** No special plan or async-gap mitigation needed. Mohamed works a **normal schedule** from Egypt (June–August) with no expected disruption to velocity. The weekly plan in `tasks.md` proceeds unchanged.
 **Reasoning:** The original concern (a focus gap during travel) does not materialize — Mohamed confirmed normal availability. The front-loading already done (M1.2 cold-start, M1.3 TFLite spike) stands as insurance, not as a forced mitigation. The "Egypt gap mitigation" section in `tasks.md` is retained as a safety net but is not driving scheduling. The W3 TFLite spike was non-negotiable regardless and is ✅ done (M1.3).
 
+### L12 — LLM key handling: client-direct, accept beta risk (resolves the M2.3 sub-decision flagged in L10)
+
+**Date locked:** 2026-05-25
+**Decision:** `parseTasks()` calls the LLM providers **directly from the client** (no proxy) for the TestFlight beta. The provider API key is read at runtime from an `EXPO_PUBLIC_` env var, which inlines it into the JS bundle where it is extractable. We accept that risk for beta, mitigated as below. Supersedes the "prefer a proxy / do NOT use `EXPO_PUBLIC_`" lean in `provider.ts`'s W1 note.
+
+**Beta posture (defense in depth, no backend):**
+- **Two-provider chain.** Gemini 2.5-flash-lite primary (best quality; 15 RPM / 1,000 RPD) → Groq `llama-3.1-8b-instant` fallback. Groq's free tier gives that model **14,400 RPD** (14× every other Groq model — see the table in L10's notes), so it absorbs overflow once Gemini's 1,000/day is spent: combined ceiling ≈ 15,400 parses/day, ample for beta. OpenRouter stays unconfigured (optional third link).
+- **Gemini key restriction.** Restricted in Google Cloud to (a) the iOS bundle id `com.floq.app` and (b) the Generative Language API only — a stolen Gemini key is largely unusable elsewhere.
+- **Groq key is NOT restrictable.** Groq has no bundle-id / referrer restriction, so `EXPO_PUBLIC_GROQ_API_KEY` ships fully unrestricted — a leaked Groq key is freely usable (up to its free quota) until rotated. This is the main downgrade from a single-key posture; accepted for beta because it is free-tier and rotatable.
+- **Rotatable + monitored.** Both keys are free-tier (no financial exposure); set usage alerts; rotate on any sign of abuse.
+- **Cache.** `floq.llmCache.{sha256}` in MMKV reduces call volume before either provider is hit.
+
+**Residual risk accepted:** client-shipped keys can be extracted. The Gemini key's bundle-id restriction raises the bar (not bulletproof against a spoofed bundle id); the Groq key has no such restriction. Bounded because both are free-tier and rotatable. The proxy (before public launch) removes this for good.
+
+**Revisit before any public (non-beta) launch:** move to a **Cloud Function proxy + Firebase App Check** (keys server-side, attested clients). Middle path worth evaluating then: **Firebase AI Logic** (client calls Gemini via Firebase with App Check, no raw key in the bundle) — but it only covers Gemini, so it would narrow the L10 multi-provider chain.
+
+**Model:** `gemini-2.5-flash-lite` — chosen over the (now deprecated) `gemini-2.0-flash` and over `gemini-2.5-flash` because it has the most generous free tier (15 RPM / 1,000 RPD vs 10 / 250) and is Google's recommended model for extraction/classification, which is what brain-dump parsing is. Gemini structured output (`responseSchema`) forces the JSON shape; zod still enforces value ranges. Bump to `gemini-2.5-flash` only if parse quality proves insufficient.
+
+**Implementation:** M2.3 — HTTP in `provider.ts` (`callProvider`), orchestration in `parseTasks.ts`, zod validation in `types.ts`, cache in `cache.ts`, system prompt in `prompts.ts`.
+
 ---
 
 ## Open decisions — must resolve by end of W1
