@@ -46,3 +46,13 @@ export interface BehavioralSession {
   useCase: OnboardingSeed['use_case']; // = task_type, for the matching filter
   endedAt: number; // epoch ms, for recency ordering
 }
+
+// Inputs to the focus-score formula (M4.1). Assembled at Done (S3.3) from the
+// completed session: actual focused minutes, the distraction count, and the
+// worked-on task's difficulty. Object form so the three numbers can't be
+// transposed at the call site.
+export interface FocusScoreInputs {
+  sessionMinutes: number;
+  distractionCount: number;
+  difficulty: 1 | 2 | 3 | 4 | 5;
+}
