@@ -21,10 +21,13 @@ function ThemedStack() {
           contentStyle: { backgroundColor: theme.bg },
         }}
       >
-        {/* All other routes auto-register from the file tree; only the modals
-            need an explicit presentation override. */}
+        {/* All other routes auto-register from the file tree; only these need an
+            explicit override. */}
         <Stack.Screen name="brain-dump" options={{ presentation: 'modal' }} />
         <Stack.Screen name="task-queue" options={{ presentation: 'modal' }} />
+        {/* An active session is a no-escape route — DONE (S3.3) is the only way
+            out, so the swipe-back gesture is disabled. */}
+        <Stack.Screen name="session" options={{ gestureEnabled: false }} />
       </Stack>
     </>
   );
