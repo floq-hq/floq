@@ -1,45 +1,62 @@
 /**
- * PLACEHOLDER — the real onboarding Q1–Q4 is S2.1. This exists only so S2.0's
- * post-sign-up navigation has a real target. The temporary "Skip to Home" keeps
- * the flow from dead-ending while S2.1 is unbuilt; delete it when S2.1 lands.
+ * Q1 — Focus duration (S2.1 / onboarding.md). Slider 10–90 min, default 45,
+ * 5-min snap. Stored as `onboarding.base_focus`; feeds the cold-start formula
+ * directly. The value commits to the draft on Continue (advancing the flow),
+ * which is also what persists it for resume-on-kill.
  */
+import { useState } from 'react';
 import { router } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Button, Text } from '../../components/ui';
+import { QuestionScaffold } from '../../components/onboarding/QuestionScaffold';
+import { Slider, Text } from '../../components/ui';
+import { useOnboardingStore } from '../../stores/useOnboardingStore';
 import { useTheme } from '../../theme';
 
-export default function OnboardingQ1Placeholder() {
+const DEFAULT_MINUTES = 45;
+
+export default function Q1FocusDuration() {
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
+  const saved = useOnboardingStore((s) => s.draft.base_focus);
+  const setAnswer = useOnboardingStore((s) => s.setAnswer);
+  const [minutes, setMinutes] = useState(saved ?? DEFAULT_MINUTES);
+
+  function onContinue() {
+    setAnswer('base_focus', minutes);
+    router.push('/(onboarding)/q2');
+  }
+
   return (
-    <View
-      style={[
-        styles.root,
-        {
-          backgroundColor: theme.bg,
-          paddingTop: insets.top + 56,
-          paddingBottom: insets.bottom + 24,
-        },
-      ]}
+    <QuestionScaffold
+      question="How long can you focus before your mind wanders?"
+      helper="Drag to set your typical focus stretch. You can change this later."
+      onContinue={onContinue}
     >
-      <View style={styles.center}>
-        <Text variant="title">Onboarding</Text>
-        <Text variant="body" color={theme.textMuted} style={styles.copy}>
-          The four seed questions (Q1–Q4) land here in S2.1.
+      <View style={styles.readout}>
+        <Text variant="display">{minutes}</Text>
+        <Text variant="body" color={theme.textMuted}>
+          minutes
         </Text>
       </View>
-      <Button
-        label="Skip to Home (temp)"
-        variant="secondary"
-        onPress={() => router.replace('/home')}
+      <Slider
+        value={minutes}
+        onValueChange={setMinutes}
+        minimumValue={10}
+        maximumValue={90}
+        step={5}
       />
-    </View>
+      <View style={styles.bounds}>
+        <Text variant="caption" color={theme.textMuted}>
+          10 min
+        </Text>
+        <Text variant="caption" color={theme.textMuted}>
+          90 min
+        </Text>
+      </View>
+    </QuestionScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, paddingHorizontal: 24 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
-  copy: { textAlign: 'center' },
+  readout: { alignItems: 'center', gap: 4 },
+  bounds: { flexDirection: 'row', justifyContent: 'space-between' },
 });

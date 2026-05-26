@@ -1,17 +1,24 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { OnboardingAnswers } from '../../services/onboarding';
 
-const { saveOnboarding, loadOnboarding, clearOnboarding } = vi.hoisted(() => ({
-  saveOnboarding: vi.fn(),
-  loadOnboarding: vi.fn(),
-  clearOnboarding: vi.fn(),
-}));
+const { saveOnboarding, loadOnboarding, clearOnboarding, saveDraft, loadDraft, clearDraft } =
+  vi.hoisted(() => ({
+    saveOnboarding: vi.fn(),
+    loadOnboarding: vi.fn(),
+    clearOnboarding: vi.fn(),
+    saveDraft: vi.fn(),
+    loadDraft: vi.fn(() => ({})),
+    clearDraft: vi.fn(),
+  }));
 
 // Mock the I/O barrel so the store is tested in isolation (no MMKV / Firestore).
 vi.mock('../../services/onboarding', () => ({
   saveOnboarding,
   loadOnboarding,
   clearOnboarding,
+  saveDraft,
+  loadDraft,
+  clearDraft,
 }));
 
 import { useOnboardingStore } from '../useOnboardingStore';
@@ -38,6 +45,43 @@ describe('useOnboardingStore', () => {
       base_focus: 50,
       use_case: 'coding',
     });
+  });
+
+  it('setAnswer persists the accumulated draft to MMKV on every edit (resume-on-kill)', () => {
+    const { setAnswer } = useOnboardingStore.getState();
+    setAnswer('base_focus', 50);
+    setAnswer('distraction_level', 'easy');
+    expect(saveDraft).toHaveBeenCalledTimes(2);
+    expect(saveDraft).toHaveBeenLastCalledWith({ base_focus: 50, distraction_level: 'easy' });
+  });
+
+  it('hydrate restores a partial draft when onboarding is not finalized', async () => {
+    loadOnboarding.mockResolvedValue(null);
+    loadDraft.mockReturnValueOnce({ base_focus: 30, distraction_level: 'hard' });
+    await useOnboardingStore.getState().hydrate('u1');
+    expect(useOnboardingStore.getState().answers).toBeNull();
+    expect(useOnboardingStore.getState().draft).toEqual({ base_focus: 30, distraction_level: 'hard' });
+  });
+
+  it('hydrate ignores any draft once onboarding is finalized', async () => {
+    loadOnboarding.mockResolvedValue(complete);
+    await useOnboardingStore.getState().hydrate('u1');
+    expect(loadDraft).not.toHaveBeenCalled();
+    expect(useOnboardingStore.getState().draft).toEqual({});
+  });
+
+  it('finalize drops the persisted draft once the complete blob is saved', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1000);
+    useOnboardingStore.setState({
+      draft: {
+        base_focus: 45,
+        distraction_level: 'neutral',
+        preferred_time: 'morning',
+        use_case: 'work',
+      },
+    });
+    await useOnboardingStore.getState().finalize();
+    expect(clearDraft).toHaveBeenCalledTimes(1);
   });
 
   it('finalize builds complete answers, stamps completed_at, persists, and sets answers', async () => {

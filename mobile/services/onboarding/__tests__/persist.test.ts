@@ -34,9 +34,13 @@ vi.mock('firebase/firestore', () => ({
 
 import {
   ONBOARDING_KEY,
+  ONBOARDING_DRAFT_KEY,
   saveOnboarding,
   loadOnboarding,
   clearOnboarding,
+  saveDraft,
+  loadDraft,
+  clearDraft,
 } from '../persist';
 
 function sample(overrides: Partial<OnboardingAnswers> = {}): OnboardingAnswers {
@@ -145,9 +149,40 @@ describe('loadOnboarding', () => {
 });
 
 describe('clearOnboarding', () => {
-  it('removes the MMKV blob', () => {
+  it('removes the answers blob AND the in-progress draft', () => {
     mmkvStore.set(ONBOARDING_KEY, JSON.stringify(sample()));
+    mmkvStore.set(ONBOARDING_DRAFT_KEY, JSON.stringify({ base_focus: 45 }));
     clearOnboarding();
     expect(mmkvStore.has(ONBOARDING_KEY)).toBe(false);
+    expect(mmkvStore.has(ONBOARDING_DRAFT_KEY)).toBe(false);
+  });
+});
+
+describe('draft (S2.1 resume-on-kill)', () => {
+  it('saveDraft writes a partial blob under floq.onboarding.draft', () => {
+    saveDraft({ base_focus: 60, distraction_level: 'easy' });
+    expect(JSON.parse(mmkvStore.get(ONBOARDING_DRAFT_KEY)!)).toEqual({
+      base_focus: 60,
+      distraction_level: 'easy',
+    });
+  });
+
+  it('loadDraft round-trips what saveDraft wrote', () => {
+    saveDraft({ base_focus: 30 });
+    expect(loadDraft()).toEqual({ base_focus: 30 });
+  });
+
+  it('loadDraft returns {} on a fresh start and on a corrupt blob', () => {
+    expect(loadDraft()).toEqual({});
+    mmkvStore.set(ONBOARDING_DRAFT_KEY, '{ not valid json');
+    expect(loadDraft()).toEqual({});
+  });
+
+  it('clearDraft removes only the draft, leaving the finalized answers blob', () => {
+    mmkvStore.set(ONBOARDING_KEY, JSON.stringify(sample()));
+    saveDraft({ base_focus: 45 });
+    clearDraft();
+    expect(mmkvStore.has(ONBOARDING_DRAFT_KEY)).toBe(false);
+    expect(mmkvStore.has(ONBOARDING_KEY)).toBe(true);
   });
 });

@@ -16,6 +16,10 @@ import { db } from '../firebase/init';
 import type { OnboardingAnswers } from './types';
 
 export const ONBOARDING_KEY = 'floq.onboarding';
+// In-progress Q1–Q4 edits (S2.1). Kept separate from the finalized blob so a
+// kill mid-flow resumes on the next unanswered question, and so finalize can
+// drop the draft without disturbing the source-of-truth answers.
+export const ONBOARDING_DRAFT_KEY = 'floq.onboarding.draft';
 
 const storage = createMMKV();
 
@@ -82,6 +86,32 @@ export async function loadOnboarding(
 /** Clear persisted answers (store reset / future sign-out). LLM cache untouched. */
 export function clearOnboarding(): void {
   storage.remove(ONBOARDING_KEY);
+  storage.remove(ONBOARDING_DRAFT_KEY);
+}
+
+/**
+ * Persist the in-progress draft (S2.1). Written synchronously on every answer so
+ * a kill mid-flow loses nothing — the flow resumes at the first unanswered
+ * question. Dropped by finalize() once the complete blob is saved.
+ */
+export function saveDraft(draft: Partial<OnboardingAnswers>): void {
+  storage.set(ONBOARDING_DRAFT_KEY, JSON.stringify(draft));
+}
+
+/** Load the in-progress draft. Returns {} on a fresh start or a corrupt blob. */
+export function loadDraft(): Partial<OnboardingAnswers> {
+  const raw = storage.getString(ONBOARDING_DRAFT_KEY);
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw) as Partial<OnboardingAnswers>;
+  } catch {
+    return {};
+  }
+}
+
+/** Drop the in-progress draft (on finalize). Leaves the finalized answers blob. */
+export function clearDraft(): void {
+  storage.remove(ONBOARDING_DRAFT_KEY);
 }
 
 /** Normalize a Firestore onboarding map into local answers (Timestamp → ms). */

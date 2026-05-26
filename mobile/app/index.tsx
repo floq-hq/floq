@@ -12,12 +12,28 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { Redirect } from 'expo-router';
 import { resolveStartRoute, useCurrentUser } from '../services/firebase';
 import { useOnboardingStore } from '../stores/useOnboardingStore';
+import type { OnboardingAnswers } from '../services/onboarding';
 import { useTheme } from '../theme';
+
+/**
+ * First unanswered question for an unfinished onboarding, so a kill mid-flow
+ * resumes where the user left off (S2.1) rather than restarting at Q1. Once all
+ * four are in the draft, send to the finalize step. Relies on the store
+ * hydrating the persisted draft (services/onboarding/persist `loadDraft`).
+ */
+function onboardingResumeHref(draft: Partial<OnboardingAnswers>): string {
+  if (draft.base_focus === undefined) return '/(onboarding)/q1';
+  if (draft.distraction_level === undefined) return '/(onboarding)/q2';
+  if (draft.preferred_time === undefined) return '/(onboarding)/q3';
+  if (draft.use_case === undefined) return '/(onboarding)/q4';
+  return '/(onboarding)/ready';
+}
 
 export default function Index() {
   const theme = useTheme();
   const { user, initializing } = useCurrentUser();
   const answers = useOnboardingStore((s) => s.answers);
+  const draft = useOnboardingStore((s) => s.draft);
   const hydrated = useOnboardingStore((s) => s.hydrated);
   const hydrate = useOnboardingStore((s) => s.hydrate);
 
@@ -40,7 +56,7 @@ export default function Index() {
     route === 'auth'
       ? '/(auth)/welcome'
       : route === 'onboarding'
-        ? '/(onboarding)/q1'
+        ? onboardingResumeHref(draft)
         : '/home';
   return <Redirect href={href} />;
 }
