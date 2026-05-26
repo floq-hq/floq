@@ -35,8 +35,11 @@ import { Button, Text } from '../components/ui';
 import { PhaseIndicator } from '../components/session/PhaseIndicator';
 import { SessionTimer } from '../components/session/SessionTimer';
 import { DistractionButton } from '../components/session/DistractionButton';
+import { SessionToast } from '../components/session/SessionToast';
 import { phaseFor, type Phase, type SessionPlan } from '../services/timer';
 import { writeSession } from '../services/session/distraction';
+import { startBackgroundPolicy } from '../services/session/backgroundPolicy';
+import { backgroundDistractionMessage } from '../services/session/backgroundNotice';
 import type { CompletedSession } from '../services/session/types';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useActiveSessionStore } from '../stores/useActiveSessionStore';
@@ -78,6 +81,11 @@ export default function SessionScreen() {
   const elapsedSeconds = useSharedValue(0);
   const [phase, setPhase] = useState<Phase>('struggle');
 
+  // On-return toast (S3.4): { text, key } where key is the leave timestamp, so a
+  // second background episode re-triggers the toast even if the wording matches.
+  const [bgNotice, setBgNotice] = useState<{ text: string; key: number } | null>(null);
+  const dismissNotice = useCallback(() => setBgNotice(null), []);
+
   // Advance the clock on the UI thread. timeSinceFirstFrame is ms since this
   // callback's first frame ≈ session start; flooring gives whole seconds.
   useFrameCallback((frame) => {
@@ -114,6 +122,18 @@ export default function SessionScreen() {
       plan,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
+  }, []);
+
+  // Background-during-session policy (M3.4): while this screen is mounted, watch
+  // AppState. If the app is backgrounded past the user's threshold (decisions.md
+  // L15), M3.4 logs a distraction via the M3.2 funnel and calls back so we can
+  // surface the on-return toast (S3.4). Tear the listener down on unmount.
+  useEffect(() => {
+    const stop = startBackgroundPolicy({
+      onBackgroundDistraction: ({ durationMs, at }) =>
+        setBgNotice({ text: backgroundDistractionMessage(durationMs), key: at }),
+    });
+    return stop;
   }, []);
 
   // DONE: end the session, persist it, promote the next task, show the summary.
@@ -206,6 +226,13 @@ export default function SessionScreen() {
         <DistractionButton />
         <Button label="DONE" onPress={onDone} />
       </View>
+
+      <SessionToast
+        message={bgNotice?.text ?? null}
+        nonce={bgNotice?.key}
+        onDismiss={dismissNotice}
+        topOffset={insets.top + 8}
+      />
     </View>
   );
 }
