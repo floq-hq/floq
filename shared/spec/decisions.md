@@ -227,6 +227,22 @@ Moved to Locked — see **L11**. Outcome: normal schedule, no gap, no special mi
 **Owner:** Both
 **Notes:** Out of MVP scope. If pursued, write the superseding decision before any implementation. Raised by Mustafa 2026-05-23.
 
+### O10 — Circadian-relative time matching (hours-since-waking, not wall clock)
+
+**Must resolve by:** Post-MVP design spike (NOT blocking — MVP ships wall-clock bucketing in M3.3)
+**Raised by:** Mohamed, 2026-05-26
+**Context:** The cold-start `time_match_mod` (×1.0 if `context.hour_bucket === onboarding.preferred_time`, else ×0.85) currently compares two **wall-clock** concepts. Circadian alertness actually tracks **time since waking** + chronotype, not absolute clock time: "9am" is near-peak for a 05:00 riser and groggy for an 08:45 riser. Matching the user's *current circadian phase* to their *preferred energy window* should be more accurate than wall-clock matching.
+**Why it's not a drop-in (the conflict):**
+- Contradicts the frozen `timer.md` Inputs table row: `context.hour_bucket | current local time → morning / afternoon / evening / night`. A redefinition is a spec change and must supersede that row.
+- **No wake-time data is collected.** Onboarding Q1–Q4 (`base_focus / distraction_level / preferred_time / use_case`) has no wake time. Needs either a **new onboarding question** ("when do you usually wake up?") — touching `onboarding.md`, Mustafa's S2.1 screens, `OnboardingAnswers`, and the seed mapper — or **inference from session history** (M4.2).
+- `preferred_time` (Q3) is itself a wall-clock concept; it would have to be re-expressed in the same circadian frame to stay comparable.
+- `HourBucket` feeds the locked ML feature vector (`ml/CLAUDE.md`); changing its meaning mid-stream breaks training-data continuity between cold-regime sessions and the TFLite model.
+**Options:**
+  - **(a) Keep wall-clock bucketing** — current MVP. Cutoffs morning 05:00–11:59 / afternoon 12:00–16:59 / evening 17:00–20:59 / night 21:00–04:59, in `mobile/services/session/compute.ts` `hourBucket()`. _(default)_
+  - **(b) Circadian-relative bucket** — collect a wake anchor (onboarding Q or HealthKit / first-open inference), derive hours-since-waking → phase, re-express `preferred_time` in the same frame, update `timer.md` + the `ml` feature-vector doc.
+**Owner:** Mohamed (timer/ML), with Mustafa for any onboarding-question UI.
+**Notes:** MVP keeps (a). The derivation is isolated to `hourBucket()` behind `computeSessionPlan`'s `ctx` in `mobile/services/session/compute.ts`, so (b) can replace it without touching the frozen cold-start formula or S3.0. The frozen `time_match_mod` constants (1.0 / 0.85) are unaffected either way — only the bucket-derivation method changes.
+
 ---
 
 ## Decisions to revisit post-MVP (not now)
