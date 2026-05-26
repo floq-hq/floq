@@ -10,8 +10,11 @@
 
 import { create } from 'zustand';
 import {
+  clearDraft,
   clearOnboarding,
+  loadDraft,
   loadOnboarding,
+  saveDraft,
   saveOnboarding,
   type OnboardingAnswers,
 } from '../services/onboarding';
@@ -39,13 +42,17 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
   hydrated: false,
 
   setAnswer: (key, value) =>
-    set((s) => ({
-      draft: { ...s.draft, [key]: value } as Partial<OnboardingAnswers>,
-    })),
+    set((s) => {
+      const draft = { ...s.draft, [key]: value } as Partial<OnboardingAnswers>;
+      saveDraft(draft); // persist immediately so a kill mid-flow resumes here (S2.1)
+      return { draft };
+    }),
 
   hydrate: async (uid) => {
     const answers = await loadOnboarding(uid);
-    set({ answers, hydrated: true });
+    // Restore the in-progress draft only when onboarding isn't finalized yet —
+    // a finalized user routes to Home and never re-enters the question flow.
+    set({ answers, draft: answers ? {} : loadDraft(), hydrated: true });
   },
 
   finalize: async (uid) => {
@@ -66,6 +73,7 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
       completed_at: Date.now(),
     };
     await saveOnboarding(answers, uid);
+    clearDraft(); // complete blob is the source of truth now; drop the draft
     set({ answers, draft: {} });
   },
 
