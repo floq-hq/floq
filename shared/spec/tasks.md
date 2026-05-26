@@ -393,10 +393,11 @@ Goal by end of week: a user can start a session, see the phase indicator move th
 
 ### M3.4 🔴 Background-during-session policy (O4 resolution)
 **Depends on:** M3.2
-**Unblocks:** S3.4
+**Unblocks:** S3.4, S3.5
 **Acceptance:**
-- Decision logged in `decisions.md` — likely the default: >30s background = log distraction
-- Service-side: `mobile/services/session/backgroundPolicy.ts` — listens to `AppState`, dispatches distraction event when threshold exceeded
+- O4 resolved in `decisions.md` (**L15**): the policy is a **user setting**, `forgiving` (>30s, default) / `strict` (any background); option (c) call/alarm-exempt deferred (needs native CallKit)
+- Settings layer: `mobile/services/settings/{types,persist}.ts` + `mobile/stores/useSettingsStore.ts` (MMKV blob `floq.settings`, default `forgiving`)
+- Service-side: `mobile/services/session/backgroundPolicy.ts` — `startBackgroundPolicy({ onBackgroundDistraction })` listens to `AppState`, reads the setting, logs a distraction via the M3.2 funnel when the background time exceeds the threshold; pure `exceedsThreshold` unit-tested
 
 ---
 
@@ -453,7 +454,18 @@ Goal by end of week: a user can start a session, see the phase indicator move th
 **Depends on:** M3.4
 **Acceptance:**
 - When background-distraction is logged, a subtle toast on return: "Backgrounded for 47s — logged a distraction."
+- Wires `startBackgroundPolicy({ onBackgroundDistraction })` (M3.4) on the session screen; calls the returned `stop()` on unmount
 - Tested by manually backgrounding the simulator >30s mid-session
+
+### S3.5 🟡 Background-policy setting UI
+**Depends on:** M3.4
+**Skill:** none
+**Spec references:** `decisions.md` L15
+**Acceptance:**
+- A settings control lets the user pick `forgiving` (>30s, default) vs `strict` (any background), bound to `useSettingsStore` (`setBackgroundPolicy`)
+- Copy explains the trade-off in one calm line each; default reflects the persisted setting on load (`hydrate`)
+- (c) call/alarm-exempt is NOT offered (deferred per L15)
+- Renders in both themes
 
 ---
 
