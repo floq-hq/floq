@@ -11,15 +11,19 @@
  * ends it, writes the record (writeSession, M3.2), promotes the next task
  * (markDone, M2.5), and routes to the summary.
  *
- * Timing model: a single shared `elapsedSeconds`, advanced by a Reanimated frame
- * callback on the UI thread (no per-second setState). The clock display reads it
- * directly (SessionTimer). Phase is the ONLY thing kept in React state, and it's
- * updated solely at transitions — useAnimatedReaction fires once per whole second
- * and runOnJS(phaseFor) flips state only when the phase actually changes. phaseFor
- * (M3.1) stays the single source of truth for boundaries; we never re-derive them.
+ * Timing model: a single shared `elapsedSeconds`, advanced on the UI thread by a
+ * Reanimated frame callback (no per-second setState) that derives it from the wall
+ * clock — `now - session.startedAt`. Because it's a pure function of real time, the
+ * clock survives a remount / re-render / background trip instead of snapping back
+ * to 0, which is what "the session cannot be paused" requires (timer.md,
+ * session-flow.md). The clock display reads the shared value directly (SessionTimer).
+ * Phase is the ONLY thing kept in React state, updated solely at transitions —
+ * useAnimatedReaction fires once per whole second and runOnJS(phaseFor) flips state
+ * only when the phase actually changes. phaseFor (M3.1) stays the single source of
+ * truth for boundaries; we never re-derive them.
  *
- * (The frame clock drives the on-screen display; the recorded focus minutes use
- * the store's wall-clock startedAt so backgrounded time isn't undercounted.)
+ * (The on-screen clock and the recorded focus minutes now share the same wall-clock
+ * basis — session.startedAt — so they always agree.)
  */
 import { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -35,8 +39,11 @@ import { Button, Text } from '../components/ui';
 import { PhaseIndicator } from '../components/session/PhaseIndicator';
 import { SessionTimer } from '../components/session/SessionTimer';
 import { DistractionButton } from '../components/session/DistractionButton';
+import { SessionToast } from '../components/session/SessionToast';
 import { phaseFor, type Phase, type SessionPlan } from '../services/timer';
 import { writeSession } from '../services/session/distraction';
+import { startBackgroundPolicy } from '../services/session/backgroundPolicy';
+import { backgroundDistractionMessage } from '../services/session/backgroundNotice';
 import type { CompletedSession } from '../services/session/types';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useActiveSessionStore } from '../stores/useActiveSessionStore';
@@ -76,13 +83,25 @@ export default function SessionScreen() {
   const markDone = useTaskStore((s) => s.markDone);
 
   const elapsedSeconds = useSharedValue(0);
+  // Wall-clock anchor (session.startedAt). The clock is derived as (now - anchor)
+  // every frame, so it survives a remount / re-render / background instead of
+  // snapping back to 0 — timeSinceFirstFrame restarts on those, wall-clock doesn't.
+  const startedAtMs = useSharedValue(0);
   const [phase, setPhase] = useState<Phase>('struggle');
 
-  // Advance the clock on the UI thread. timeSinceFirstFrame is ms since this
-  // callback's first frame ≈ session start; flooring gives whole seconds.
-  useFrameCallback((frame) => {
+  // On-return toast (S3.4): { text, key } where key is the leave timestamp, so a
+  // second background episode re-triggers the toast even if the wording matches.
+  const [bgNotice, setBgNotice] = useState<{ text: string; key: number } | null>(null);
+  const dismissNotice = useCallback(() => setBgNotice(null), []);
+
+  // Advance the clock on the UI thread (no per-second setState). Derived purely
+  // from the wall clock and the session's startedAt, so it's a stable function of
+  // real time — a remount or re-render can't make it jump back to 0.
+  useFrameCallback(() => {
     'worklet';
-    elapsedSeconds.value = Math.floor(frame.timeSinceFirstFrame / 1000);
+    if (startedAtMs.value === 0) return; // not seeded yet (pre-mount-effect)
+    const secs = Math.floor((Date.now() - startedAtMs.value) / 1000);
+    elapsedSeconds.value = secs < 0 ? 0 : secs;
   });
 
   // Recompute the phase only when the whole-second value changes, and commit to
@@ -102,18 +121,36 @@ export default function SessionScreen() {
     },
   );
 
-  // Begin the in-flight session in the active-session store (M3.2) so the
-  // distraction button (S3.2) — and the Done writer (S3.3) — have a session to
-  // act on; logDistraction no-ops without one. Once per mount: a fresh START is
-  // a fresh session and the route params are stable for the screen's lifetime.
+  // Begin — or RESUME — the in-flight session in the active-session store (M3.2)
+  // so the distraction button (S3.2) and the Done writer (S3.3) have a session to
+  // act on. If one already exists for this task (the screen remounted after a
+  // background), resume it: never start a fresh session that would reset the clock
+  // or wipe distractions already logged (incl. background ones from M3.4). Either
+  // way, seed the wall-clock anchor from the session's startedAt.
   useEffect(() => {
     if (!plan || !task) return;
-    startSession({
-      taskId: task.id,
-      task: { title: task.title, difficulty: task.difficulty, estMinutes: task.estMinutes },
-      plan,
-    });
+    const existing = useActiveSessionStore.getState().active;
+    if (!existing || existing.taskId !== task.id) {
+      startSession({
+        taskId: task.id,
+        task: { title: task.title, difficulty: task.difficulty, estMinutes: task.estMinutes },
+        plan,
+      });
+    }
+    startedAtMs.value = useActiveSessionStore.getState().active?.startedAt ?? Date.now();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
+  }, []);
+
+  // Background-during-session policy (M3.4): while this screen is mounted, watch
+  // AppState. If the app is backgrounded past the user's threshold (decisions.md
+  // L15), M3.4 logs a distraction via the M3.2 funnel and calls back so we can
+  // surface the on-return toast (S3.4). Tear the listener down on unmount.
+  useEffect(() => {
+    const stop = startBackgroundPolicy({
+      onBackgroundDistraction: ({ durationMs, at }) =>
+        setBgNotice({ text: backgroundDistractionMessage(durationMs), key: at }),
+    });
+    return stop;
   }, []);
 
   // DONE: end the session, persist it, promote the next task, show the summary.
@@ -206,6 +243,13 @@ export default function SessionScreen() {
         <DistractionButton />
         <Button label="DONE" onPress={onDone} />
       </View>
+
+      <SessionToast
+        message={bgNotice?.text ?? null}
+        nonce={bgNotice?.key}
+        onDismiss={dismissNotice}
+        topOffset={insets.top + 8}
+      />
     </View>
   );
 }
