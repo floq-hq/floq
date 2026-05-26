@@ -2,3 +2,4 @@
 export * from './types';
 export { computeColdStart } from './coldStart';
 export { computeWarming, warmingAlpha } from './warming';
+export { phaseFor } from './phases';
