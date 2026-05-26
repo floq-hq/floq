@@ -2,10 +2,12 @@
  * Session screen (S3.1) — the focus timer. A root-level full-screen route (NOT a
  * tab): you start it from Home, and there's no tab bar / pause / escape while
  * you're in it (mobile/CLAUDE.md: "No pause button. Pausing IS a distraction").
- * Distraction + Done land in S3.2 / S3.3.
+ * The GOT DISTRACTED control is here (S3.2); DONE lands in S3.3.
  *
  * S3.0 hands off { taskId, plan } via route params. The plan drives the phase
- * boundaries; the task id resolves the title shown under the clock.
+ * boundaries; the task id resolves the title shown under the clock. On mount the
+ * screen opens the in-flight session in the active-session store (M3.2), which is
+ * what the distraction button logs against and the Done writer (S3.3) reads.
  *
  * Timing model: a single shared `elapsedSeconds`, advanced by a Reanimated frame
  * callback on the UI thread (no per-second setState). The clock display reads it
@@ -17,7 +19,7 @@
  * (Authoritative start time + persistence across backgrounding arrive with M3.2's
  * useActiveSessionStore; the frame clock is enough for the W3 session UI.)
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -30,8 +32,10 @@ import {
 import { Text } from '../components/ui';
 import { PhaseIndicator } from '../components/session/PhaseIndicator';
 import { SessionTimer } from '../components/session/SessionTimer';
+import { DistractionButton } from '../components/session/DistractionButton';
 import { phaseFor, type Phase, type SessionPlan } from '../services/timer';
 import { useTaskStore } from '../stores/useTaskStore';
+import { useActiveSessionStore } from '../stores/useActiveSessionStore';
 import { useTheme } from '../theme';
 
 /** Parse the serialized plan from the route param; null on anything malformed. */
@@ -58,7 +62,8 @@ export default function SessionScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ taskId?: string; plan?: string }>();
   const plan = parsePlan(params.plan);
-  const taskTitle = useTaskStore((s) => s.tasks.find((t) => t.id === params.taskId)?.title);
+  const task = useTaskStore((s) => s.tasks.find((t) => t.id === params.taskId));
+  const startSession = useActiveSessionStore((s) => s.startSession);
 
   const elapsedSeconds = useSharedValue(0);
   const [phase, setPhase] = useState<Phase>('struggle');
@@ -87,6 +92,20 @@ export default function SessionScreen() {
     },
   );
 
+  // Begin the in-flight session in the active-session store (M3.2) so the
+  // distraction button (S3.2) — and the Done writer (S3.3) — have a session to
+  // act on; logDistraction no-ops without one. Once per mount: a fresh START is
+  // a fresh session and the route params are stable for the screen's lifetime.
+  useEffect(() => {
+    if (!plan || !task) return;
+    startSession({
+      taskId: task.id,
+      task: { title: task.title, difficulty: task.difficulty, estMinutes: task.estMinutes },
+      plan,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
+  }, []);
+
   // Defensive: S3.0 always passes a plan, but a stray deep link shouldn't crash.
   if (!plan) {
     return (
@@ -111,15 +130,17 @@ export default function SessionScreen() {
 
       <View style={styles.center}>
         <SessionTimer elapsedSeconds={elapsedSeconds} />
-        {taskTitle ? (
+        {task?.title ? (
           <Text variant="body" color={theme.textMuted} style={styles.task} numberOfLines={2}>
-            {taskTitle}
+            {task.title}
           </Text>
         ) : null}
       </View>
 
-      {/* Reserved for the GOT DISTRACTED (S3.2) + DONE (S3.3) controls. */}
-      <View style={styles.controls} />
+      {/* GOT DISTRACTED (S3.2); DONE lands beside it in S3.3. */}
+      <View style={styles.controls}>
+        <DistractionButton />
+      </View>
     </View>
   );
 }
@@ -130,5 +151,5 @@ const styles = StyleSheet.create({
   top: { alignItems: 'center', paddingTop: 8 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
   task: { textAlign: 'center' },
-  controls: { minHeight: 72 },
+  controls: { gap: 12 },
 });
