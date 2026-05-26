@@ -11,13 +11,15 @@
  * Lives at /home (not (tabs)/index) because app/index.tsx is the auth gate and
  * already owns "/"; the gate redirects an onboarded user straight here.
  */
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { router } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, Card, Pill, Text } from '../../components/ui';
 import { StreakCounter } from '../../components/StreakCounter';
+import { FirstSessionFramingCard } from '../../components/FirstSessionFramingCard';
 import { selectHiddenCount, selectTopTask, useTaskStore } from '../../stores/useTaskStore';
+import { getHasSeenIntro } from '../../services/intro/seen';
 import { useTheme } from '../../theme';
 
 export default function Home() {
@@ -27,6 +29,7 @@ export default function Home() {
   const hydrate = useTaskStore((s) => s.hydrate);
   const topTask = useTaskStore(selectTopTask);
   const hiddenCount = useTaskStore(selectHiddenCount);
+  const [showIntro, setShowIntro] = useState(false);
 
   // Load the persisted queue once on first mount (mirrors the onboarding gate).
   useEffect(() => {
@@ -34,6 +37,17 @@ export default function Home() {
   }, [hydrated, hydrate]);
 
   const openBrainDump = () => router.push('/brain-dump');
+
+  // Show the framing card once before the user's very first session (S2.5),
+  // then proceed into the session; skip straight through on later sessions.
+  const onStartSession = () => {
+    if (getHasSeenIntro()) router.push('/session');
+    else setShowIntro(true);
+  };
+  const onIntroDismiss = () => {
+    setShowIntro(false);
+    router.push('/session');
+  };
 
   return (
     <View
@@ -85,10 +99,12 @@ export default function Home() {
       </View>
 
       {topTask ? (
-        <Button label="START SESSION" onPress={() => router.push('/session')} />
+        <Button label="START SESSION" onPress={onStartSession} />
       ) : (
         <Button label="Brain-dump" onPress={openBrainDump} />
       )}
+
+      <FirstSessionFramingCard visible={showIntro} onDismiss={onIntroDismiss} />
     </View>
   );
 }
