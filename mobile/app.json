@@ -29,7 +29,8 @@
         }
       ],
       "expo-router",
-      "expo-font"
+      "expo-font",
+      "expo-sqlite"
     ],
     "ios": {
       "supportsTablet": true,

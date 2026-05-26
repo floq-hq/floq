@@ -17,6 +17,14 @@ vi.mock('../../../stores/useTaskStore', () => ({
   useTaskStore: { getState: () => ({ tasks: store.tasks }) },
 }));
 
+// compute.ts now sources sessions_today from SQLite (M4.2). Mock the storage
+// barrel so the node env doesn't load expo-sqlite / firebase, and so we can
+// drive the count from the test.
+const sql = vi.hoisted(() => ({ sessionsToday: 0 }));
+vi.mock('../../storage', () => ({
+  countSessionsToday: vi.fn(() => sql.sessionsToday),
+}));
+
 import { hourBucket, buildSessionInputs, computeSessionPlan } from '../compute';
 
 // A deterministic local Tuesday, 2026-05-26 10:00 (a "morning" time).
@@ -94,11 +102,26 @@ describe('computeSessionPlan', () => {
   beforeEach(() => {
     store.answers = answers;
     store.tasks = [makeTask()];
+    sql.sessionsToday = 0;
   });
 
   it('round-trips the timer.md worked example: hard task at preferred time → focus 51, break 11, cold', () => {
     // 60 × 1.0 (neutral) × 0.85 (difficulty 5) × 1.0 (morning match) × 1.0 (1st today) = 51
     const plan = computeSessionPlan('t1', { now: morning10 });
+    expect(plan).toEqual({ focusMinutes: 51, breakMinutes: 11, regime: 'cold' });
+  });
+
+  it('sources sessions_today from SQLite when ctx omits it (fatigue applies)', () => {
+    sql.sessionsToday = 2; // 3rd session today → fatigue ×0.8
+    // 60 × 1.0 × 0.85 × 1.0 × 0.8 = 40.8 → floor 40; break floor(40 × 0.22) = 8
+    const plan = computeSessionPlan('t1', { now: morning10 });
+    expect(plan).toEqual({ focusMinutes: 40, breakMinutes: 8, regime: 'cold' });
+  });
+
+  it('lets an explicit ctx.sessionsToday override the SQLite count', () => {
+    sql.sessionsToday = 2; // SQLite would say 3rd today...
+    // ...but the caller pins it to the 1st → fatigue ×1.0 → focus 51
+    const plan = computeSessionPlan('t1', { now: morning10, sessionsToday: 0 });
     expect(plan).toEqual({ focusMinutes: 51, breakMinutes: 11, regime: 'cold' });
   });
 

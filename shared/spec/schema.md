@@ -85,9 +85,9 @@ The only doc friends can read — and only when both users have `privacy: 'frien
 | `last_session_score` | number | ✅ | |
 | `updated_at` | Timestamp | ✅ | |
 
-## `users/{uid}/tasks/{taskId}` 🧪 provisional
+## `users/{uid}/tasks/{taskId}` ✅
 
-Current task queue, **mirror of the SQLite tasks table** (canonical schema defined in M4.2, `mobile/models/schema.sql`). Documented here for completeness; finalize when SQLite persistence lands.
+Current task queue, **mirror of the SQLite tasks table** (canonical schema: `mobile/models/schema.sql`, M4.2). Owner-only (no friend read; never written to `social`). Written client-side, async, on every queue change — one-way push diff (upsert current queue, delete removed ids); no cloud function. Source of truth: SQLite (`mobile/services/storage/tasks.ts`); the MMKV blob is a fast-read cache.
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
