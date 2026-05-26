@@ -1,10 +1,11 @@
 /**
- * Session screen (S3.1) — the focus timer. A root-level full-screen route (NOT a
- * tab): you start it from Home, and there's no tab bar / pause / escape while
+ * Focus session screen (S3.1) — the timer. A root-level full-screen route at
+ * /focus (NOT a tab): START on Home or the Session-tab launchpad opens it, and
+ * because it renders over the tabs there's no bottom bar / pause / escape while
  * you're in it (mobile/CLAUDE.md: "No pause button. Pausing IS a distraction").
  * The GOT DISTRACTED (S3.2) and DONE (S3.3) controls live here.
  *
- * S3.0 hands off { taskId, plan } via route params. The plan drives the phase
+ * The launcher (useStartSession) hands off { taskId, plan } via route params. The plan drives the phase
  * boundaries; the task id resolves the title shown under the clock. On mount the
  * screen opens the in-flight session in the active-session store (M3.2); DONE
  * ends it, writes the record (writeSession, M3.2), promotes the next task

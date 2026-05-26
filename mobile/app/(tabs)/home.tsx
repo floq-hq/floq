@@ -8,23 +8,23 @@
  * — one visible task at a time (session-flow.md). The "+" and the empty-state
  * CTA both open the brain-dump modal (S2.4 fleshes that screen out).
  *
- * START SESSION runs the S3.0 start-session flow: compute the plan for the top
- * task (computeSessionPlan, M3.3), gate the one-time framing card (S2.5), then
- * navigate to /session. The session screen UI itself lands in S3.1.
+ * START SESSION runs the shared start-session flow (useStartSession): compute the
+ * plan for the top task (computeSessionPlan, M3.3), gate the one-time framing card
+ * (S2.5), then open the full-screen /focus session. The Session tab launchpad
+ * starts a session the exact same way.
  *
  * Lives at /home (not (tabs)/index) because app/index.tsx is the auth gate and
  * already owns "/"; the gate redirects an onboarded user straight here.
  */
-import { useCallback, useEffect, useState } from 'react';
-import { router, useFocusEffect } from 'expo-router';
+import { useEffect } from 'react';
+import { router } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, Card, Pill, Text } from '../../components/ui';
 import { StreakCounter } from '../../components/StreakCounter';
 import { FirstSessionFramingCard } from '../../components/FirstSessionFramingCard';
+import { useStartSession } from '../../components/session/useStartSession';
 import { selectHiddenCount, selectTopTask, useTaskStore } from '../../stores/useTaskStore';
-import { getHasSeenIntro } from '../../services/intro/seen';
-import { computeSessionPlan } from '../../services/session/compute';
 import { useTheme } from '../../theme';
 
 export default function Home() {
@@ -34,8 +34,7 @@ export default function Home() {
   const hydrate = useTaskStore((s) => s.hydrate);
   const topTask = useTaskStore(selectTopTask);
   const hiddenCount = useTaskStore(selectHiddenCount);
-  const [showIntro, setShowIntro] = useState(false);
-  const [launching, setLaunching] = useState(false);
+  const { onStart, launching, showIntro, onIntroDismiss } = useStartSession(topTask);
 
   // Load the persisted queue once on first mount (mirrors the onboarding gate).
   useEffect(() => {
@@ -43,47 +42,6 @@ export default function Home() {
   }, [hydrated, hydrate]);
 
   const openBrainDump = () => router.push('/brain-dump');
-
-  // S3.0 — start the session. Compute the plan AT session start (CLAUDE.md:
-  // "recompute at session start, not once per day") behind a loading state so
-  // the tap never feels janky, then hand off to /session. computeSessionPlan
-  // (M3.3) is synchronous, so we defer a frame: lets the loading state paint and
-  // keeps a thrown invariant out of the press handler's render path.
-  const launchSession = useCallback(() => {
-    if (!topTask || launching) return;
-    setLaunching(true);
-    setTimeout(() => {
-      try {
-        const plan = computeSessionPlan(topTask.id);
-        // Handoff via route params — no new store, so we don't pre-empt Mohamed's
-        // M3.2 useActiveSessionStore. The plan is small + JSON-serializable; the
-        // session screen (S3.1) reads { taskId, plan }.
-        router.push({
-          pathname: '/session',
-          params: { taskId: topTask.id, plan: JSON.stringify(plan) },
-        });
-      } catch (err) {
-        // topTask is guaranteed (button only renders with one) and onboarding by
-        // the routing gate, so a throw here is a real bug — surface it, don't nav.
-        if (__DEV__) console.warn('[session] failed to start session', err);
-        setLaunching(false);
-      }
-    }, 0);
-  }, [topTask, launching]);
-
-  // Show the framing card once before the user's very first session (S2.5), then
-  // launch; skip straight to launch on later sessions.
-  const onStartSession = useCallback(() => {
-    if (getHasSeenIntro()) launchSession();
-    else setShowIntro(true);
-  }, [launchSession]);
-  const onIntroDismiss = useCallback(() => {
-    setShowIntro(false);
-    launchSession();
-  }, [launchSession]);
-
-  // Returning from a session refocuses Home — re-enable START.
-  useFocusEffect(useCallback(() => setLaunching(false), []));
 
   return (
     <View
@@ -142,7 +100,7 @@ export default function Home() {
       </View>
 
       {topTask ? (
-        <Button label="START SESSION" onPress={onStartSession} loading={launching} />
+        <Button label="START SESSION" onPress={onStart} loading={launching} />
       ) : (
         <Button label="Brain-dump" onPress={openBrainDump} />
       )}
