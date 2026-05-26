@@ -150,6 +150,23 @@ Pinned exact (no tilde) in mobile/package.json.
 
 **Implementation:** new **M2.5** (data layer) + **S2.6** (manual-add + CRUD UI); **M4.2** extended to "session **+ task** persistence"; **S2.4** / **S3.3** acceptance tightened. UI surfaces: a shared `ManualTaskForm` (used by both first-class manual add and the LLM-failure path) + a `TaskQueueSheet` opened from the "+N hidden" caption.
 
+### L15 — Background-during-session policy: a user setting (resolves O4)
+
+**Date locked:** 2026-05-26
+**Decision:** The background-during-session policy is a **user-configurable setting**, not one hardcoded rule. `settings.backgroundPolicy`:
+- **`forgiving`** (default) — app backgrounded **>30s** during an active session = 1 distraction. Forgives quick app-switches.
+- **`strict`** — **any** background during a session = 1 distraction.
+
+One distraction per background→foreground episode, logged via the M3.2 funnel (batched to session end). Only `AppState 'background'` starts the clock; `'inactive'` (app-switcher peek, notification shade) is ignored as transient.
+
+**Option (c) "exempt phone calls / alarms" is DEFERRED.** The original O4 framing assumed "iOS gives us the reason" — it does not via `AppState`, which only reports active/background/inactive, not *why*. Detecting a call/alarm needs native **CallKit / `CXCallObserver`** (a custom native module + dev-client rebuild), which conflicts with managed Expo (L1/L9). Revisit post-MVP if users complain that calls cost them distractions. Until then a call that backgrounds the app >30s counts (matches `session-flow.md`: "still counts as a distraction by default").
+
+**Ownership (M→S split):** **M3.4 (Mohamed)** owns the service (`services/session/backgroundPolicy.ts`), the setting (`services/settings/` + `useSettingsStore`), persistence, and the default. **S3.5 (Mustafa)** owns the picker UI bound to `useSettingsStore`; **S3.4 (Mustafa)** consumes the service's `onBackgroundDistraction` callback for the on-return toast.
+
+**Surfacing:** the on-return toast (S3.4) is the primary feedback; the summary's total distraction count includes background ones. Per-distraction *source* tagging (to label "N from backgrounding" distinctly) is deferred — it would change M3.2's `distractions: number[]` model and the frozen `schema.md` `distraction_timestamps`.
+
+**Edge cases (no special-casing):** screen lock → iOS sends `background`, so the time counts toward the threshold ("only background time counts"). App killed while backgrounded → no log for that episode; the session is restored from M3.2's MMKV mirror and the discard/save prompt is a separate frontend concern.
+
 ---
 
 ## Open decisions — must resolve by end of W1
@@ -168,16 +185,9 @@ Moved to Locked — see **L10**. Outcome: a free-tier fallback chain (Gemini →
 
 Moved to Locked — see **L11**. Outcome: normal schedule, no gap, no special mitigation.
 
-### O4 — Background-during-session policy
+### O4 — Background-during-session policy ✅ RESOLVED (2026-05-26)
 
-**Must resolve by:** End of W3 (when session screen lands)
-**Default:** App backgrounded > 30 seconds during an active session = log one distraction.
-**Options:**
-  - **(a) 30s threshold** (default) — forgiving for quick switches.
-  - **(b) Any background = distraction** — strictest.
-  - **(c) Phone calls / alarms exempted** — kinder but adds complexity (iOS gives us the reason).
-**Owner:** Mustafa
-**Notes:** Whatever lands, surface it in the post-session summary so the user can mentally adjust.
+Moved to Locked — see **L15**. Outcome: a **user-configurable setting** (`forgiving` 30s default / `strict` any-background), not one hardcoded rule. Option (c) "exempt calls/alarms" deferred — `AppState` doesn't expose the reason; it needs native CallKit (conflicts with managed Expo, L1/L9). Service + setting = M3.4 (Mohamed); picker UI = new S3.5 (Mustafa).
 
 ### O5 — Friend graph schema
 
