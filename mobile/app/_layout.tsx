@@ -19,7 +19,11 @@ function ThemedStack() {
           headerShown: false,
           contentStyle: { backgroundColor: theme.bg },
         }}
-      />
+      >
+        {/* All other routes auto-register from the file tree; only the modal
+            needs an explicit presentation override. */}
+        <Stack.Screen name="brain-dump" options={{ presentation: 'modal' }} />
+      </Stack>
     </>
   );
 }
