@@ -25,6 +25,7 @@ function ThemedStack() {
             explicit override. */}
         <Stack.Screen name="brain-dump" options={{ presentation: 'modal' }} />
         <Stack.Screen name="task-queue" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
         {/* An active focus session is a no-escape takeover — it renders over the
             tabs (no bottom bar) and DONE (S3.3) is the only way out, so the
             swipe-back gesture is disabled. */}
