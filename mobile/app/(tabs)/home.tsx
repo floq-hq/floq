@@ -81,9 +81,16 @@ export default function Home() {
               </View>
             </Card>
             {hiddenCount > 0 ? (
-              <Text variant="caption" color={theme.textMuted} style={styles.hidden}>
-                +{hiddenCount} hidden
-              </Text>
+              <Pressable
+                onPress={() => router.push('/task-queue')}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={`${hiddenCount} more tasks — open the queue`}
+              >
+                <Text variant="caption" color={theme.textMuted} style={styles.hidden}>
+                  +{hiddenCount} hidden
+                </Text>
+              </Pressable>
             ) : null}
           </View>
         ) : (

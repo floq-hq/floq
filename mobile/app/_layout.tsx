@@ -6,6 +6,7 @@
  */
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ThemeProvider, useTheme } from '../theme';
 
@@ -20,9 +21,10 @@ function ThemedStack() {
           contentStyle: { backgroundColor: theme.bg },
         }}
       >
-        {/* All other routes auto-register from the file tree; only the modal
-            needs an explicit presentation override. */}
+        {/* All other routes auto-register from the file tree; only the modals
+            need an explicit presentation override. */}
         <Stack.Screen name="brain-dump" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="task-queue" options={{ presentation: 'modal' }} />
       </Stack>
     </>
   );
@@ -30,10 +32,14 @@ function ThemedStack() {
 
 export default function RootLayout() {
   return (
-    <SafeAreaProvider>
-      <ThemeProvider>
-        <ThemedStack />
-      </ThemeProvider>
-    </SafeAreaProvider>
+    // GestureHandlerRootView must wrap the whole app for gesture-handler (swipe
+    // to delete, drag to reorder in the task queue) to receive touches.
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <ThemeProvider>
+          <ThemedStack />
+        </ThemeProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
