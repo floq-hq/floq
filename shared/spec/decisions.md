@@ -167,6 +167,74 @@ One distraction per background→foreground episode, logged via the M3.2 funnel 
 
 **Edge cases (no special-casing):** screen lock → iOS sends `background`, so the time counts toward the threshold ("only background time counts"). App killed while backgrounded → no log for that episode; the session is restored from M3.2's MMKV mirror and the discard/save prompt is a separate frontend concern.
 
+### L16 — Session lifecycle: end-early (abandon), kill/restore, overrun + break recalculation
+
+**Date locked:** 2026-05-27
+**Decision:** A session has **two distinct end intents** plus an **overrun** concept, and an in-flight session **survives app-kill** and is recoverable. This closes the gap that the only way out of `/focus` was DONE (which completed the task and removed it from the queue) — and that the session-flow.md "app killed → discard or save" edge case had no implementer.
+
+**Three end paths:**
+1. **DONE (finished).** Always available. Completes the session: writes a full record (`completed: true`), `markDone` promotes the next task, focus score computed (M4.1), recovery break **recomputed from actual minutes** (below), streak credit, → summary. If `actual > planned`, the excess is recorded as `overrun_minutes`.
+2. **End early / "I stopped" (didn't finish).** A separate, understated affordance. **Prompts each time** — *Save progress* or *Discard*:
+   - **Save** → writes a record with `completed: false`. Its **focus score is still computed (M4.1) and counts toward the weekly / leaderboard score** — real focus time happened, the user just had to leave before finishing the task (revised per Mohamed 2026-05-27). Task **stays in the queue** — no `markDone`.
+   - **Discard** → no record written. Task stays.
+   - Either way → returns to Home; **no recovery break enforced** (it wasn't a completed focus session).
+3. **Kill mid-session + relaunch.** On next launch, detect the dangling active session (M3.2's MMKV mirror) and **prompt: Resume / Save / Discard.** Resume re-enters `/focus` with wall-clock-correct elapsed; Save writes a `completed:false` partial (as in path 2); Discard drops it. The task is preserved in all three.
+
+The DONE-vs-end-early distinction is the user's **intent**, not the elapsed time: a user can finish (DONE) before the suggested time, or stop (end-early) after it. "No pause" (L5 / session-flow.md #3) is unchanged — end-early is a deliberate, confirmed *termination*, not a pause.
+
+**Overrun + suggested-stop UX (resolves the "past suggested time" rough edges):**
+- The session screen shows the **suggested stop time** and progress toward it.
+- Once `elapsed ≥ plan.focusMinutes`, surface an explicit **overrun** state + affordance — replacing the current pre-Done "Recovery" mislabel (the timer kept counting and the pill flipped to Recovery even though the user was still focusing). This overrun state is **derived in the UI/helper layer from `elapsed` vs `plan.focusMinutes`** — it does **NOT** add a phase to, or alter the boundaries of, the FROZEN `phases.ts` (root CLAUDE.md safety rule).
+- At any saved end, `overrun_minutes = max(0, actualFocusMinutes − plannedFocusMinutes)`.
+
+**Recovery-break recalculation (extends `timer.md`; constants UNCHANGED):**
+- The recovery break shown after DONE is recomputed from **actual** focus minutes at session end: `break = clamp(round(actualFocusMinutes × 0.22), 5, 25)` — the **same `0.22` ratio and `5/25` clamps frozen in `coldStart.ts`**, only the input changes (actual minutes, not the session-start suggestion). **No new constant, no value change** — the frozen formula is untouched; if the constants aren't already exported they get an *export-only* lift (flagged per the safety rule). This supersedes the implicit "break is computed once at start" behavior **for the recovery break only**; the session-*start* recommendation is still the cold/warming/mature output.
+- **Cross-ref O7** (enforced vs skippable recovery): L16 only sets the break *duration*; whether recovery is enforced/skippable stays O7's open call.
+
+**Data model (SQLite, append-only migrations — root CLAUDE.md safety rule):**
+- **Migration 002:** `sessions.completed INTEGER NOT NULL DEFAULT 1` (existing/Done rows backfill to completed). Firestore mirror gains `completed: boolean`.
+- **Migration 003:** `sessions.overrun_minutes INTEGER NOT NULL DEFAULT 0`. Firestore mirror gains `overrun_minutes: number`.
+- `break_minutes` already exists — store the recomputed value there.
+- `CompletedSession` gains `completed: boolean` and `overrunMinutes: number`.
+
+**Invariants:** the **weekly focus score / leaderboard includes partial (`completed:false`) sessions** — real focus time is credited (a focus score is computed for every saved session). The **streak** counts any **saved** session — `completed: true` OR a saved `completed:false` partial (the user tapped *Save progress* because real focus happened); only **discarded** sessions never count (revised per Mohamed 2026-05-27, **supersedes** session-flow.md "Completed = tapped Done"). No minimum-minutes guard for MVP (saving is the qualifier; revisit post-MVP if abused). All saved sessions (partials included) are kept for ML/history and are owner-only like every session (`floq-firestore` rule #3) — never surfaced to friends/social.
+
+**Ownership (M→S split, per L14/L15):** **M4.5 (Mohamed)** — active-session lifecycle (`abandonSession`, restore detection/resume), partial-session write, migration 002, streak/aggregation exclusion. **M4.6 (Mohamed)** — overrun computation + break recalculation service, migration 003, planned/actual/overrun recording. **S4.4 / S4.5 (Mustafa)** — the end-early & restore **prompt dialogs**, the suggested-stop + progress display, and the overrun affordance on `/focus`, wired to the M services.
+
+**Implementation:** new **M4.5** + **M4.6** in `tasks.md`. `session-flow.md` (edge cases / Task promotion) and `timer.md` (recovery-break recalc note) to be updated by those tasks under owner review.
+
+### L17 — Recovery is skippable, with a modeled recovery-debt cost on the next session (resolves O7)
+
+**Date locked:** 2026-05-27
+**Decision:** Recovery is **recommended and skippable, NOT hard-enforced** (resolves O7 → option **(b) skippable with friction**). The "friction" is honest and modeled: the system measures the **actual gap** between one session's end and the next session's start, and under-resting reduces the *next* session's focus recommendation. It never blocks the Start button and never docks the focus score already earned. **Supersedes** `timer.md` rule #4 and `session-flow.md` rule #4 ("recovery enforced / next session blocked / Start disabled").
+
+**The model (gap clock + `recovery_mod`):**
+- `recommendedBreak` = the recovery break of the *previous* session, recomputed from its actual focus minutes per **L16** (`clamp(round(prevActualFocus × 0.22), 5, 25)`).
+- `actualGap` = minutes between the previous session's `ended_at` and this session's start (the "gap clock").
+- `recovery_fraction = clamp(actualGap / recommendedBreak, 0, 1)` — the fraction of the needed rest actually taken. A **linear ramp** (simple + honest about uncertainty, matching the EWMA philosophy **L8**; the literature's true shape is decelerating-to-asymptote — an exponential refinement is post-MVP).
+- `recovery_mod = RECOVERY_FLOOR + (1 − RECOVERY_FLOOR) × recovery_fraction`, with **`RECOVERY_FLOOR = 0.8`**.
+  - Rested fully (gap ≥ recommendedBreak) → `recovery_mod = 1.0`, no penalty. *(The "11-min break, I started after 15 min" case: implicitly rested → zero cost, and the score already earned is untouched.)*
+  - Restarted immediately (gap ≈ 0) → `recovery_mod = 0.8`, the maximum ~20% trim.
+  - No previous session inside the recovery window (first session of the day / long gap) → `recovery_mod = 1.0`.
+
+**Where it lives (respects the frozen formula):** `recovery_mod` is applied as a **post-modifier on the regime router's recommendation inside `computeSessionPlan`** — **NOT** inside `coldStart.ts`. It **operationalizes `context.hours_since_last`**, an input *already listed* in `timer.md` ("proxy for recovery") but never previously wired into a formula. So the frozen cold-start constants are untouched; the recovery effect is a separate, clearly-sourced, regime-agnostic multiplier applied **before** the final `clamp(15, 90)` (the 15-min lower clamp still bounds the worst case).
+
+**`RECOVERY_FLOOR = 0.8` — justification + status:** the research below establishes that incomplete recovery monotonically degrades subsequent cognitive performance (existence + direction are solid); it does **not** hand us an exact %-per-minute. So `0.8` is a **calibrated constant** (like EWMA `alpha = 0.3` — "tune in testing"), chosen to sit in the same conservative band as the formula's existing mods (fatigue 3rd+ `0.8`, time-mismatch `0.85`, hard-difficulty `0.85`): it *nudges*, it doesn't cripple. Revisit with real session data (post-MVP / QA).
+
+**Interaction with `fatigue_mod` (calibration note):** `fatigue_mod` (sessions-today count) captures cumulative *daily* depletion; `recovery_mod` captures *rest quality* before this session — separable (rest well between your 2nd and 3rd session: `fatigue_mod = 0.8`, `recovery_mod = 1.0`). They *can* compound (poorly-rested 3rd session → `0.8 × 0.8 = 0.64`); **M4.7 must validate** the combined floor doesn't over-penalize. The `15`-min clamp is the hard backstop.
+
+**UI (S handoff):** the recovery screen shows the recommended break + a calm one-line note (e.g. *"Starting before your recovery is up tends to shorten your next focus window."*) and surfaces the gap / "time since last session." Skipping is one tap — no nag, no block.
+
+**Science (recovery is a function of rest taken, not of a button press):**
+- Short breaks restore vigor but not full cognitive resources; longer breaks restore more — break length governs recovery ([Albulescu et al., 2022, PLOS ONE](https://journals.plos.org/plosone/article?id=10.1371%2Fjournal.pone.0272460)).
+- Depleted attentional/vigilance resources **self-recover when allowed to rest**, on a **decelerating trend to an asymptote** ([Ralph et al., "Rest is best", Cognition 2014](https://www.sciencedirect.com/science/article/abs/pii/S0010027714001929)).
+- Mental fatigue recovers only **partially over ~20 min**, not back to baseline; recovery is gradual ([Development and recovery time of mental fatigue, 2021](https://www.sciencedirect.com/science/article/abs/pii/S0301051121000673)).
+- Insufficient recovery impairs the subsequent task ([Cognitive tasks impair subsequent performance, PMC9786280](https://pmc.ncbi.nlm.nih.gov/articles/PMC9786280/)).
+
+**Ownership:** **M4.7 (Mohamed)** — gap clock, `recovery_mod` in `computeSessionPlan`, skippable-recovery gating (un-block Start), recovery-gap recording. **S (Mustafa)** — recovery-screen note + skip affordance + gap display.
+
+**Implementation:** new **M4.7** in `tasks.md`. `timer.md` (rule #4 + the `hours_since_last` row → operationalized) and `session-flow.md` (rule #4) updated by M4.7 under owner review.
+
 ---
 
 ## Open decisions — must resolve by end of W1
@@ -205,16 +273,9 @@ Moved to Locked — see **L15**. Outcome: a **user-configurable setting** (`forg
 **Owner:** Mohamed
 **Notes:** Revisit post-MVP. May need a "streak grace period" if users complain.
 
-### O7 — Skippable break / enforced-recovery override
+### O7 — Skippable break / enforced-recovery override ✅ RESOLVED (2026-05-27)
 
-**Must resolve by:** End of W3 (when the session screen + recovery enforcement land)
-**Context:** `timer.md` rule #4 says recovery is mandatory — the next session is blocked for the suggested break duration. Real-world need: a user under deadline pressure (e.g. an exam crunch) may want to skip the break.
-**Options:**
-  - **(a) Hard-enforced** (current spec) — next session blocked for the full break duration.
-  - **(b) Skippable with friction** — a "skip break" action exists but shows a recovery-cost warning and is logged. _(recommended)_
-  - **(c) Freely skippable** — one-tap skip, no friction.
-**Owner:** Both (Mustafa UI, Mohamed session-flow/state)
-**Notes:** Does not affect M1.2 — the cold-start formula still *outputs* a recommended break number regardless. This decision only governs whether the session screen enforces it. Raised by Mustafa 2026-05-23.
+Moved to Locked — see **L17**. Outcome: recovery is **skippable, not hard-enforced** (option **b**), but the *friction* is a **modeled recovery-debt cost** on the next session — a `recovery_mod` (range `0.8`–`1.0`) driven by the actual end→start gap vs the recommended break, operationalizing the already-listed `hours_since_last` input — plus a calm UI note. Never a hard block, never a dock to the score already earned. Supersedes `timer.md` rule #4 / `session-flow.md` rule #4. Raised by Mustafa 2026-05-23.
 
 ### O8 — Revisit the 90-minute focus ceiling (and the 15/90, 5/25 clamps)
 

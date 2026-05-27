@@ -516,6 +516,68 @@ Goal by end of week: completed sessions have a focus score, sessions persist to 
 - `getCurrentStreak()` returns days since last gap, per the definition in `@shared/spec/session-flow.md`
 - Decision on time-zone behavior logged in `decisions.md` — likely: follows device local time, revisit post-MVP
 
+### M4.5 🔴 Session end-early (abandon) + kill/restore lifecycle
+**Depends on:** M3.2 (active-session store), M4.2 (SQLite sessions)
+**Unblocks:** S4.4 (end-early + restore prompt UI)
+**Skill:** `floq-storage`
+**Spec references:** `decisions.md` L16, `@shared/spec/session-flow.md` (edge cases / Task promotion)
+**Files:**
+- `mobile/models/migrations/002_session_completed.ts` — add `sessions.completed INTEGER NOT NULL DEFAULT 1`; bump `user_version` to 2
+- `mobile/models/schema.sql` — update the canonical reference + version comment (never edit a shipped table in place)
+- `mobile/stores/useActiveSessionStore.ts` — `abandonSession()` action; `getRestorableSession()` selector
+- `mobile/services/session/restore.ts` — detect a dangling active session on launch; `resolveRestore(action: 'resume' | 'save' | 'discard')`
+- `mobile/services/session/types.ts` — `CompletedSession.completed: boolean`
+- `mobile/services/storage/sessions.ts` — persist `completed`; exclude `completed = 0` from the streak/aggregation queries
+- `mobile/services/session/__tests__/restore.test.ts`, `mobile/services/storage/__tests__/sessions.test.ts` (extend)
+**Acceptance:**
+- DONE writes `completed = 1` (existing behavior + the new column)
+- End-early → **Save** writes `completed = 0`, task stays in queue (no `markDone`), no recovery enforced; **Discard** writes nothing, task stays
+- App killed mid-session → on relaunch `getRestorableSession()` returns the dangling session; **resume** re-enters with wall-clock-correct elapsed, **save** → `completed:0` partial, **discard** → clears the store
+- End-early → **Save** computes and stores `focus_score` (M4.1) for the partial too (the `focus_score` column is NOT NULL)
+- saved `completed = 0` partials are **included in both** `getCurrentStreak()` (M4.4) and the weekly-score / leaderboard aggregation (M4.3, M7.2) — saving a partial means real focus happened; only **discarded** sessions never count (per L16, supersedes session-flow.md "Completed = tapped Done")
+- Migration 002 runs on first launch; existing rows backfill `completed = 1`; `schema.sql` reference updated, never edited in place
+- `tsc` + `npm test` green
+
+### M4.6 🔴 Overrun tracking + recovery-break recalculation
+**Depends on:** M3.3 (compute), M4.1 (focus score), M4.2 (sessions), M4.5 (session record shape)
+**Unblocks:** S4.5 (suggested-stop + overrun UI)
+**Skill:** `floq-timer` (break recompute reuses the frozen formula) + `floq-storage` (migration)
+**Spec references:** `decisions.md` L16, `@shared/spec/timer.md` (cold-start break ratio — FROZEN), `decisions.md` O7
+**Files:**
+- `mobile/models/migrations/003_session_overrun.ts` — add `sessions.overrun_minutes INTEGER NOT NULL DEFAULT 0`; bump `user_version` to 3
+- `mobile/models/schema.sql` — reference update
+- `mobile/services/session/overrun.ts` — **pure**: `overrunMinutes(elapsedSec, plan)` and `recoveryBreakMinutes(actualFocusMinutes)` = `clamp(round(actual × 0.22), 5, 25)`, reusing `coldStart`'s frozen ratio/clamp constants (import them; do NOT redefine — if they aren't exported, lift them to an `export const` with **no value change**, flagged per the safety rule)
+- `mobile/services/session/types.ts` — `CompletedSession.overrunMinutes: number`
+- `mobile/services/storage/sessions.ts` — persist `overrun_minutes` and the recomputed `break_minutes`
+- the Done writer (`app/focus.tsx` consumes via the M service — S wires) — record planned vs actual vs overrun
+- `mobile/services/session/__tests__/overrun.test.ts`
+**Acceptance:**
+- `overrunMinutes = max(0, actualFocus − plannedFocus)`; `0` at/under the suggestion
+- recovery break at Done = `clamp(round(actualFocusMinutes × 0.22), 5, 25)`; a test asserts it **equals** `coldStart`'s break when `actual === planned` (guards against constant drift)
+- session record stores `planned_focus_minutes`, `actual_focus_minutes`, `overrun_minutes`, and the recomputed `break_minutes`
+- `phases.ts` is **untouched** — overrun is derived in the helper/UI layer, not a 5th phase (cite L16)
+- Firestore mirror includes `overrun_minutes`
+- pure functions, zero React; `tsc` + `npm test` green
+
+### M4.7 🔴 Skippable recovery + gap clock + `recovery_mod` (resolves O7)
+**Depends on:** M3.3 (computeSessionPlan), M4.2 (SQLite last-session `ended_at`), M4.6 (recomputed recovery break)
+**Unblocks:** S (recovery-screen note + skip affordance + gap display)
+**Skill:** `floq-timer`
+**Spec references:** `decisions.md` L17 (+ resolved O7), `@shared/spec/timer.md` (rule #4 + the `hours_since_last` input row — being operationalized; cold-start constants stay FROZEN), `@shared/spec/session-flow.md` (rule #4)
+**Files:**
+- `mobile/services/session/recovery.ts` — **pure**: `recoveryMod(actualGapMin, recommendedBreakMin)` = `RECOVERY_FLOOR + (1 − RECOVERY_FLOOR) × clamp(gap/break, 0, 1)`; `export const RECOVERY_FLOOR = 0.8`
+- `mobile/services/storage/sessions.ts` — `getLastSessionEndedAt()` (most-recent `ended_at`)
+- `mobile/services/session/compute.ts` — read last `ended_at`, derive `actualGap` to now, apply `recoveryMod` to the **regime-router output before** `clamp(15, 90)`; `recovery_mod = 1.0` when there is no prior session inside the recovery window
+- recovery hard-block removed — Start is **no longer disabled** during the break (supersede session-flow.md rule #4); `recovery_gap` is **derivable** from consecutive `ended_at`/`started_at` (no new column for MVP)
+- `mobile/services/session/__tests__/recovery.test.ts`
+**Acceptance:**
+- `recoveryMod(gap ≥ break)` === `1.0`; `recoveryMod(0, break)` === `0.8`; monotonic between; pure, zero React
+- `computeSessionPlan` applies `recovery_mod` to the router output **before** `clamp(15, 90)`; first-session-of-day / no recent prior → `1.0`; `coldStart.ts` constants untouched
+- Start is **NOT** blocked during recovery (skippable); the prior session's earned focus score is unchanged
+- combined `fatigue_mod × recovery_mod` validated not to push the recommendation below the 15-min clamp pathologically (calibration check logged in dev)
+- `timer.md` rule #4 + `hours_since_last` row, and `session-flow.md` rule #4, updated to match L17 (under owner review)
+- `tsc` + `npm test` green
+
 ---
 
 ## Mustafa — W4
