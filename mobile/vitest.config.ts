@@ -8,6 +8,7 @@ export default defineConfig({
     include: [
       'services/**/__tests__/**/*.test.ts',
       'stores/**/__tests__/**/*.test.ts',
+      'models/**/__tests__/**/*.test.ts',
     ],
   },
 });

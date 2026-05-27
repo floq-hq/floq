@@ -19,16 +19,17 @@ import type { OnboardingAnswers } from '../onboarding/types';
 import type { Task } from '../tasks';
 import { useOnboardingStore } from '../../stores/useOnboardingStore';
 import { useTaskStore } from '../../stores/useTaskStore';
+import { countSessionsToday } from '../storage';
 
 type DayOfWeek = TimerInputs['context']['day_of_week']; // 0..6 (Sun..Sat)
 
-// Live inputs that don't yet have a source in W3. Defaulted here; M3.2
-// (per-day counter) and M4.2 (SQLite history) inject real values via this ctx
-// later, without changing the public signature. `now` is injectable so the
-// hour-bucket/decay derivation is deterministic under test.
+// Live inputs to computeSessionPlan. `sessionsToday` now has a real source
+// (M4.2: counted from SQLite when omitted — see computeSessionPlan); the rest
+// are still defaulted until their sources land. `now` is injectable so the
+// hour-bucket/decay derivation and the today-count are deterministic under test.
 export interface SessionComputeContext {
   now?: number; // default Date.now()
-  sessionsToday?: number; // default 0
+  sessionsToday?: number; // default: countSessionsToday(now) from SQLite (M4.2)
   hoursSinceLast?: number; // default 24
   history?: { recent_focus_avg: number | null; recent_distract: number | null };
 }
@@ -103,7 +104,13 @@ export function computeSessionPlan(
     throw new Error(`[session] computeSessionPlan: no task found for id "${taskId}".`);
   }
 
-  const inputs = buildSessionInputs(task, answers, ctx);
+  // sessions_today now has a real source (M4.2): count today's completed
+  // sessions from SQLite unless the caller supplied it. Resolved here in the
+  // impure wrapper so buildSessionInputs stays pure. One indexed COUNT at
+  // session start (not a render/tick path) — cheap and synchronous.
+  const now = ctx.now ?? Date.now();
+  const sessionsToday = ctx.sessionsToday ?? countSessionsToday(now);
+  const inputs = buildSessionInputs(task, answers, { ...ctx, now, sessionsToday });
 
   // W3: cold regime only. M5.2 regime router / M5.4 warming wiring replace this
   // line later, behind the same signature.
