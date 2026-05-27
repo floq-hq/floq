@@ -5,7 +5,7 @@ description: Use this skill whenever the user asks Claude to write, modify, or r
 
 # Floq Firestore — schema and rules skill
 
-This skill loads the data model and access rules for Floq's backend. Floq's social model is the **1:1 focus partnership** (per `shared/spec/decisions.md` **L18** — a committed conviction bet; the prior n:n friends-only model is **superseded but retained for the revert path**). Anything that would expose data beyond your one active partner needs explicit approval. The **task-title privacy invariant (L4) is unchanged** — titles never leave the device to a partner.
+This skill loads the data model and access rules for Floq's backend. Floq's social model is moving to a **1:1 focus partnership** as its *primary direction* (per `shared/spec/decisions.md` **L18** — a committed bet; the prior n:n friends-only model is the documented **fallback/revert**, retained in spec). Anything that would expose data beyond your one active partner needs explicit approval. The **task-title privacy invariant (L4) is unchanged** — titles never leave the device to a partner.
 
 ## Before you write any Firestore code
 

@@ -834,6 +834,7 @@ Goal (revised): a user can pair with **one** focus partner, see the partner's sc
 - `partnerships/{pairId}` (sorted-UID doc): `members[2]`, `status: pending | active | ended`, `created_at`. **One partner at a time.**
 - `partner_invites/{inviteId}`: sender → recipient (by email/username); recipient accept → creates the partnership
 - **Rules:** a partner may READ the other's completed-session **summaries** (minutes, score, when) + **scheduled** sessions — **NEVER task titles** (L4 privacy invariant holds); writes only to own docs; ending a partnership / deleting an account cleans up the edge
+- **Consent is explicit:** partner visibility (your schedule + scores) is **opt-in at pairing**, shown plainly, and revocable by ending the partnership — never automatic. (Sharing schedule/scores with a partner is a real step beyond the old owner-only model; task titles stay private regardless.)
 - no leaderboard, no n:n friend graph
 - `tsc` + tests green
 
