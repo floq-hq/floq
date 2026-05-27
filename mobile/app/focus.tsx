@@ -44,6 +44,7 @@ import { phaseFor, type Phase, type SessionPlan } from '../services/timer';
 import { writeSession } from '../services/session/distraction';
 import { startBackgroundPolicy } from '../services/session/backgroundPolicy';
 import { backgroundDistractionMessage } from '../services/session/backgroundNotice';
+import { scheduleBreakReminder } from '../services/notifications';
 import type { CompletedSession } from '../services/session/types';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useActiveSessionStore } from '../stores/useActiveSessionStore';
@@ -192,6 +193,12 @@ export default function SessionScreen() {
     writeSession(completed).catch((err) => {
       if (__DEV__) console.warn('[session] writeSession failed', err);
     });
+
+    // End-of-break nudge (S4.2). Fire-and-forget; prompts for notification
+    // permission on first use (a session just ended — a deliberate action, not
+    // app open). Silent no-op if permission is denied. NOTE: when M4.8/M4.9 land
+    // the session-end rework, this call moves with the DONE/end-early branch.
+    void scheduleBreakReminder(snapshot.plan.breakMinutes);
 
     // Task promotion (session-flow.md §Task promotion): drop the current task; the
     // next auto-promotes, or an empty queue shows Home's brain-dump prompt.

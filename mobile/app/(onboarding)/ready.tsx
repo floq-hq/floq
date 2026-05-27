@@ -14,6 +14,7 @@ import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, Text } from '../../components/ui';
 import { useCurrentUser } from '../../services/firebase';
+import { scheduleSessionStartReminder } from '../../services/notifications';
 import { useOnboardingStore } from '../../stores/useOnboardingStore';
 import { useTheme } from '../../theme';
 
@@ -30,6 +31,11 @@ export default function Ready() {
     setBusy(true);
     try {
       await finalize(user?.uid);
+      // Opt the user into the optional daily session-start reminder at their Q3
+      // preferred time (S4.2). Finishing onboarding is a deliberate action, so
+      // it may prompt for permission here. Fire-and-forget; never blocks Home.
+      const preferred = useOnboardingStore.getState().answers?.preferred_time;
+      if (preferred) void scheduleSessionStartReminder(preferred);
       router.replace('/home');
     } catch {
       setError('Couldn’t save your answers. Check your connection and try again.');

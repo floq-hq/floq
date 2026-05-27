@@ -11,6 +11,7 @@ import { useEffect } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { Redirect } from 'expo-router';
 import { resolveStartRoute, useCurrentUser } from '../services/firebase';
+import { scheduleSessionStartReminder } from '../services/notifications';
 import { useOnboardingStore } from '../stores/useOnboardingStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import type { OnboardingAnswers } from '../services/onboarding';
@@ -50,6 +51,15 @@ export default function Index() {
   useEffect(() => {
     if (!settingsHydrated) hydrateSettings();
   }, [settingsHydrated, hydrateSettings]);
+
+  // Re-sync the daily session-start reminder on launch (S4.2), WITHOUT prompting
+  // ({ request: false }) — a launch must never trigger a permission dialog. It's
+  // a no-op until the user has granted notifications (e.g. via a break reminder),
+  // after which the reminder tracks their Q3 preferred time.
+  useEffect(() => {
+    const preferred = answers?.preferred_time;
+    if (preferred) void scheduleSessionStartReminder(preferred, { request: false });
+  }, [answers]);
 
   const waiting = initializing || (!!user && !hydrated);
   if (waiting) {
