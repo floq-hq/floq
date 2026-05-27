@@ -61,7 +61,19 @@ export default function Home() {
             +
           </Text>
         </Pressable>
-        <StreakCounter />
+        <View style={styles.headerRight}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Settings"
+            onPress={() => router.push('/settings')}
+            hitSlop={12}
+          >
+            <Text variant="heading" color={theme.textMuted}>
+              {'⚙︎'}
+            </Text>
+          </Pressable>
+          <StreakCounter />
+        </View>
       </View>
 
       <View style={styles.body}>
@@ -113,6 +125,7 @@ export default function Home() {
 const styles = StyleSheet.create({
   root: { flex: 1, paddingHorizontal: 24 },
   header: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   body: { flex: 1, justifyContent: 'center' },
   taskBlock: { gap: 12 },
   pills: { flexDirection: 'row', gap: 8, marginTop: 12 },

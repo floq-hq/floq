@@ -12,6 +12,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { Redirect } from 'expo-router';
 import { resolveStartRoute, useCurrentUser } from '../services/firebase';
 import { useOnboardingStore } from '../stores/useOnboardingStore';
+import { useSettingsStore } from '../stores/useSettingsStore';
 import type { OnboardingAnswers } from '../services/onboarding';
 import { useTheme } from '../theme';
 
@@ -36,11 +37,19 @@ export default function Index() {
   const draft = useOnboardingStore((s) => s.draft);
   const hydrated = useOnboardingStore((s) => s.hydrated);
   const hydrate = useOnboardingStore((s) => s.hydrate);
+  const settingsHydrated = useSettingsStore((s) => s.hydrated);
+  const hydrateSettings = useSettingsStore((s) => s.hydrate);
 
   // Load the seed once we know who's signed in (gates onboarding vs home).
   useEffect(() => {
     if (user && !hydrated) void hydrate(user.uid);
   }, [user, hydrated, hydrate]);
+
+  // Load app settings once at launch so the background-during-session policy
+  // (S3.5 / M3.4) is in effect for sessions even before the user opens Settings.
+  useEffect(() => {
+    if (!settingsHydrated) hydrateSettings();
+  }, [settingsHydrated, hydrateSettings]);
 
   const waiting = initializing || (!!user && !hydrated);
   if (waiting) {
