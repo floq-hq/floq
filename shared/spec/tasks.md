@@ -518,7 +518,7 @@ Goal by end of week: completed sessions have a focus score, sessions persist to 
 
 ### M4.5 🔴 Session end-early (abandon) + kill/restore lifecycle
 **Depends on:** M3.2 (active-session store), M4.2 (SQLite sessions)
-**Unblocks:** S4.4 (end-early + restore prompt UI)
+**Unblocks:** M4.8 (end-early + restore prompt UI)
 **Skill:** `floq-storage`
 **Spec references:** `decisions.md` L16, `@shared/spec/session-flow.md` (edge cases / Task promotion)
 **Files:**
@@ -540,7 +540,7 @@ Goal by end of week: completed sessions have a focus score, sessions persist to 
 
 ### M4.6 🔴 Overrun tracking + recovery-break recalculation
 **Depends on:** M3.3 (compute), M4.1 (focus score), M4.2 (sessions), M4.5 (session record shape)
-**Unblocks:** S4.5 (suggested-stop + overrun UI)
+**Unblocks:** M4.9 (suggested-stop + overrun UI)
 **Skill:** `floq-timer` (break recompute reuses the frozen formula) + `floq-storage` (migration)
 **Spec references:** `decisions.md` L16, `@shared/spec/timer.md` (cold-start break ratio — FROZEN), `decisions.md` O7
 **Files:**
@@ -561,7 +561,7 @@ Goal by end of week: completed sessions have a focus score, sessions persist to 
 
 ### M4.7 🔴 Skippable recovery + gap clock + `recovery_mod` (resolves O7)
 **Depends on:** M3.3 (computeSessionPlan), M4.2 (SQLite last-session `ended_at`), M4.6 (recomputed recovery break)
-**Unblocks:** S (recovery-screen note + skip affordance + gap display)
+**Unblocks:** M4.9 (recovery-screen note + skip affordance + gap display)
 **Skill:** `floq-timer`
 **Spec references:** `decisions.md` L17 (+ resolved O7), `@shared/spec/timer.md` (rule #4 + the `hours_since_last` input row — being operationalized; cold-start constants stay FROZEN), `@shared/spec/session-flow.md` (rule #4)
 **Files:**
@@ -577,6 +577,38 @@ Goal by end of week: completed sessions have a focus score, sessions persist to 
 - combined `fatigue_mod × recovery_mod` validated not to push the recommendation below the 15-min clamp pathologically (calibration check logged in dev)
 - `timer.md` rule #4 + `hours_since_last` row, and `session-flow.md` rule #4, updated to match L17 (under owner review)
 - `tsc` + `npm test` green
+
+### M4.8 🔴 Session-end UI: end-early affordance + Save/Discard + restore prompt
+**Owner:** Mohamed — *taking the UI for these features himself (deviation from the usual M→S split, per L16)*
+**Depends on:** M4.5
+**Unblocks:** —
+**Skill:** none (RN / Expo Router screens)
+**Spec references:** `decisions.md` L16, `@shared/spec/session-flow.md`
+**Files:**
+- `mobile/app/focus.tsx` — add an understated "End early / I stopped" control alongside DONE (must read clearly as *not* DONE — per L16 it's a termination, not a pause)
+- `mobile/components/session/EndEarlySheet.tsx` — the *Save progress* / *Discard* prompt
+- `mobile/components/session/RestoreSessionPrompt.tsx` — the *Resume / Save / Discard* prompt on relaunch
+- `mobile/app/index.tsx` (or a launch hook) — show the restore prompt when `getRestorableSession()` (M4.5) is non-null, before Home
+**Acceptance:**
+- End-early control visible during a session, understated vs DONE; one confirm step (Save / Discard)
+- **Save** → `abandonSession()` + partial write (M4.5); task stays in queue; back to Home (no recovery screen)
+- **Discard** → drops the in-flight session; task stays; back to Home
+- On relaunch with a dangling session, the Resume/Save/Discard prompt shows before Home; **Resume** re-enters `/focus` with wall-clock-correct elapsed
+- DONE path unchanged; renders in both themes
+
+### M4.9 🔴 Suggested-stop + overrun affordance + recovery note/skip UI
+**Owner:** Mohamed — *taking the UI himself (per L16 / L17)*
+**Depends on:** M4.6, M4.7
+**Unblocks:** —
+**Skill:** none (RN / Expo Router)
+**Spec references:** `decisions.md` L16, L17
+**Files:**
+- `mobile/app/focus.tsx` — suggested-stop time + progress toward it; once `elapsed ≥ planned`, an explicit **overrun** state/affordance (NOT the "Recovery" pill — `phases.ts` stays untouched), reading `overrunMinutes` from M4.6
+- `mobile/app/session-summary.tsx` / recovery screen — show the recomputed break + a calm one-line recovery-cost note; a **skip** affordance (Start is **not** blocked, L17); a "time since last session" / gap display
+**Acceptance:**
+- Suggested stop time + progress visible during a session; at/after the suggested time the overrun state shows, distinct from the post-Done Recovery phase
+- Recovery screen shows the recomputed break + the one-line trade-off note; skipping is one tap; Start not disabled (L17)
+- gap clock / time-since-last surfaced; renders in both themes
 
 ---
 

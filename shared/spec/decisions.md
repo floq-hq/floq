@@ -199,7 +199,7 @@ The DONE-vs-end-early distinction is the user's **intent**, not the elapsed time
 
 **Invariants:** the **weekly focus score / leaderboard includes partial (`completed:false`) sessions** — real focus time is credited (a focus score is computed for every saved session). The **streak** counts any **saved** session — `completed: true` OR a saved `completed:false` partial (the user tapped *Save progress* because real focus happened); only **discarded** sessions never count (revised per Mohamed 2026-05-27, **supersedes** session-flow.md "Completed = tapped Done"). No minimum-minutes guard for MVP (saving is the qualifier; revisit post-MVP if abused). All saved sessions (partials included) are kept for ML/history and are owner-only like every session (`floq-firestore` rule #3) — never surfaced to friends/social.
 
-**Ownership (M→S split, per L14/L15):** **M4.5 (Mohamed)** — active-session lifecycle (`abandonSession`, restore detection/resume), partial-session write, migration 002, streak/aggregation exclusion. **M4.6 (Mohamed)** — overrun computation + break recalculation service, migration 003, planned/actual/overrun recording. **S4.4 / S4.5 (Mustafa)** — the end-early & restore **prompt dialogs**, the suggested-stop + progress display, and the overrun affordance on `/focus`, wired to the M services.
+**Ownership:** **M4.5 (Mohamed)** — active-session lifecycle (`abandonSession`, restore detection/resume), partial-session write, migration 002, streak/aggregation handling. **M4.6 (Mohamed)** — overrun computation + break recalculation service, migration 003, planned/actual/overrun recording. **M4.8 / M4.9 (Mohamed)** — the end-early & restore **prompt dialogs**, the suggested-stop + progress display, and the overrun affordance on `/focus`. *Mohamed is taking the UI for these features himself* (deviation from the usual M→S split, per his call 2026-05-27).
 
 **Implementation:** new **M4.5** + **M4.6** in `tasks.md`. `session-flow.md` (edge cases / Task promotion) and `timer.md` (recovery-break recalc note) to be updated by those tasks under owner review.
 
@@ -231,7 +231,7 @@ The DONE-vs-end-early distinction is the user's **intent**, not the elapsed time
 - Mental fatigue recovers only **partially over ~20 min**, not back to baseline; recovery is gradual ([Development and recovery time of mental fatigue, 2021](https://www.sciencedirect.com/science/article/abs/pii/S0301051121000673)).
 - Insufficient recovery impairs the subsequent task ([Cognitive tasks impair subsequent performance, PMC9786280](https://pmc.ncbi.nlm.nih.gov/articles/PMC9786280/)).
 
-**Ownership:** **M4.7 (Mohamed)** — gap clock, `recovery_mod` in `computeSessionPlan`, skippable-recovery gating (un-block Start), recovery-gap recording. **S (Mustafa)** — recovery-screen note + skip affordance + gap display.
+**Ownership:** **M4.7 (Mohamed)** — gap clock, `recovery_mod` in `computeSessionPlan`, skippable-recovery gating (un-block Start), recovery-gap recording. **M4.9 (Mohamed)** — recovery-screen note + skip affordance + gap display (Mohamed is taking the UI himself, per 2026-05-27).
 
 **Implementation:** new **M4.7** in `tasks.md`. `timer.md` (rule #4 + the `hours_since_last` row → operationalized) and `session-flow.md` (rule #4) updated by M4.7 under owner review.
 
