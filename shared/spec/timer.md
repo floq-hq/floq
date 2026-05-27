@@ -9,7 +9,7 @@ The timer is the brain of Floq. Every constant here is research-backed (see `sci
 | Struggle | 0 – 20 min | Friction is normal. Do not interrupt. Encourage push-through. |
 | Release | ~20 min | Brain lets go. Brief transition. |
 | Flow | 20 – 90 min | Protect this. Distractions reset the recovery clock. |
-| Recovery | 15 – 20 min after Done | Mandatory. Replenishes attention. Next session unlocks after. |
+| Recovery | 15 – 20 min after Done | Recommended, **skippable** (L17). Replenishes attention. Starting before the end→start gap closes trims the next session's recommendation (`recovery_mod`). |
 
 Implementation: pure state machine in `mobile/services/timer/phases.ts`. Signature:
 
@@ -33,7 +33,7 @@ Recommendation is recomputed at **session start**, not once per day. Same user a
 | `context.hour_bucket` | current local time → morning / afternoon / evening / night | enum |
 | `context.day_of_week` | weekday vs weekend | enum |
 | `context.sessions_today` | counter, resets at local midnight | int |
-| `context.hours_since_last` | proxy for recovery | float |
+| `context.hours_since_last` | proxy for recovery → drives `recovery_mod` (L17) | float |
 | `history.recent_focus_avg` | rolling 7-day average focus minutes | float |
 | `history.recent_distract` | rolling 7-day average distractions per session | float |
 | `onboarding.seed * decay` | onboarding weight, linear decay over 14 days | float |
@@ -99,7 +99,7 @@ The `23` is the research-backed minutes-of-recovery cost per distraction (Mark e
 1. **Only one task is visible at a time.** Hidden tasks reappear after the current is done.
 2. **Distraction button always visible** during a session. One-tap log, no confirm.
 3. **No pause.** Pausing IS a distraction — log one and continue.
-4. **Recovery is enforced.** After Done, the next session is blocked for the suggested break duration (5–25 min).
+4. **Recovery is recommended, not blocked (L17 supersedes the old hard-enforce).** After Done the app recommends a break (5–25 min); the next session is **not** blocked. Under-resting (starting before the end→start gap closes) trims the next recommendation via `recovery_mod` — see `decisions.md` L17.
 5. **Timer recomputes at every session start.**
 
 ## Why not Pomodoro
