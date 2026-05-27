@@ -565,16 +565,17 @@ Goal by end of week: completed sessions have a focus score, sessions persist to 
 **Skill:** `floq-timer`
 **Spec references:** `decisions.md` L17 (+ resolved O7), `@shared/spec/timer.md` (rule #4 + the `hours_since_last` input row — being operationalized; cold-start constants stay FROZEN), `@shared/spec/session-flow.md` (rule #4)
 **Files:**
-- `mobile/services/session/recovery.ts` — **pure**: `recoveryMod(actualGapMin, recommendedBreakMin)` = `RECOVERY_FLOOR + (1 − RECOVERY_FLOOR) × clamp(gap/break, 0, 1)`; `export const RECOVERY_FLOOR = 0.8`
+- `mobile/services/session/recovery.ts` — **pure**: `recoveryMod(actualGapMin, recommendedBreakMin)` = `RECOVERY_FLOOR + (1 − RECOVERY_FLOOR) × clamp(gap/break, 0, 1)` and `depletionMod(fatigueMod, recoveryMod)` = `max(DEPLETION_FLOOR, fatigueMod × recoveryMod)`; `export const RECOVERY_FLOOR = 0.85`, `export const DEPLETION_FLOOR = 0.75`
 - `mobile/services/storage/sessions.ts` — `getLastSessionEndedAt()` (most-recent `ended_at`)
-- `mobile/services/session/compute.ts` — read last `ended_at`, derive `actualGap` to now, apply `recoveryMod` to the **regime-router output before** `clamp(15, 90)`; `recovery_mod = 1.0` when there is no prior session inside the recovery window
+- `mobile/services/session/compute.ts` — read last `ended_at`, derive `actualGap` to now; combine `fatigue_mod` and `recovery_mod` via `depletionMod` (the floored product, **NOT** a raw multiply) and apply that to the **regime-router output before** `clamp(15, 90)`; `recovery_mod = 1.0` when there is no prior session inside the recovery window
 - recovery hard-block removed — Start is **no longer disabled** during the break (supersede session-flow.md rule #4); `recovery_gap` is **derivable** from consecutive `ended_at`/`started_at` (no new column for MVP)
 - `mobile/services/session/__tests__/recovery.test.ts`
 **Acceptance:**
-- `recoveryMod(gap ≥ break)` === `1.0`; `recoveryMod(0, break)` === `0.8`; monotonic between; pure, zero React
-- `computeSessionPlan` applies `recovery_mod` to the router output **before** `clamp(15, 90)`; first-session-of-day / no recent prior → `1.0`; `coldStart.ts` constants untouched
+- `recoveryMod(gap ≥ break)` === `1.0`; `recoveryMod(0, break)` === `0.85`; monotonic between; pure, zero React
+- `depletionMod` floors the `fatigue_mod × recovery_mod` product at `0.75` (worst corner `0.8 × 0.85 = 0.68` clips to `0.75`); other mods are not floored
+- `computeSessionPlan` applies `depletion_mod` to the router output **before** `clamp(15, 90)`; first-session-of-day / no recent prior → `recovery_mod = 1.0`; `coldStart.ts` constants untouched
 - Start is **NOT** blocked during recovery (skippable); the prior session's earned focus score is unchanged
-- combined `fatigue_mod × recovery_mod` validated not to push the recommendation below the 15-min clamp pathologically (calibration check logged in dev)
+- the combined depletion penalty degrades gracefully and never reaches the recommendation **only** via the 15-min clamp (the clamp is a backstop, not the mechanism)
 - `timer.md` rule #4 + `hours_since_last` row, and `session-flow.md` rule #4, updated to match L17 (under owner review)
 - `tsc` + `npm test` green
 
