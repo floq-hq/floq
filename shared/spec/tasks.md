@@ -763,6 +763,21 @@ Goal by end of week: forecast graph is rendered, warming regime behaves correctl
 
 ## Mustafa — W6
 
+### S6.0 🔴 Shareable session card (per L18 — ships in EVERY scenario)
+**Owner:** Mustafa (UI); data contract from focus score (M4.1) + phase data (M3.1) — **already exists**
+**Depends on:** S3.3 (session-end summary), M4.1 (focus score)
+**Unblocks:** distribution (the artifact is the marketing surface)
+**Skill:** none
+**Status:** path-agnostic — ships whether or not the L18 pairing bet wins.
+**Spec references:** `decisions.md` L18 (Monetization / distribution), `@shared/spec/design-system.md`
+**Files:** `mobile/components/session/SessionCard.tsx`; share affordance in the session-end flow
+**Acceptance:**
+- renders **one** completed session as a screenshot-worthy artifact: phase curve (Struggle → Release → Flow), focus score as the hero number, a one-line insight ("your Tue mornings run 14% above your average"), a quiet Floq mark
+- **no task titles** (privacy); reads as "data about your brain," not "I used an app 🌱"
+- share / screenshot affordance in the S3.3 summary
+- **the test:** does the screenshot make sense to someone who's never heard of Floq? (if no, redesign)
+- both themes
+
 ### S6.1 🔴 Forecast graph rendering
 **Depends on:** S5.2, M6.1
 **Skill:** none
@@ -795,11 +810,73 @@ Goal by end of week: forecast graph is rendered, warming regime behaves correctl
 
 ---
 
-# Week 7 — Social layer
+# Week 7 — Partnership core (was: Social layer)
 
-Goal by end of week: friends can be added, leaderboard renders, async session feed works, social profile syncs on session end.
+> **⚠️ SUPERSEDED BY L18 (2026-05-27) — conviction bet, see `decisions.md` L18 + `docs/strategy-social-as-core.md`.**
+> The original W7 (friends + leaderboard + async feed — M7.1–M7.3, S7.1–S7.2, **retained below for the L18 revert path**) is replaced by the **focus-partnership** plan below. All partnership tasks are **v1 designs subject to the L18 validation gate**; if the gate fails (paired users don't out-retain solos), revert to the original tasks and ship solo-first + the session card.
 
-## Mohamed — W7
+Goal (revised): a user can pair with **one** focus partner, see the partner's scheduled + completed sessions, share a **gently-designed** pair streak, and — critically — a new solo user has a great experience **while waiting for a partner**. The make-or-break is the **activation funnel (time-to-first-partner)**, not the streak.
+
+## Partnership tasks (Phase A — friend-pairing) — NEW per L18
+
+### M7.0 🔴 Partner edge + invite + partner-visible session service (resolves O5 via L18)
+**Owner:** Mohamed
+**Depends on:** M2.4 (auth), M4.2 (sessions in SQLite + Firestore mirror)
+**Unblocks:** S7.0
+**Skill:** `floq-firestore`
+**Status:** v1 design, subject to the L18 gate.
+**Spec references:** `decisions.md` L18 + (resolved) O5; `schema.md` (`partnerships` / `partner_invites`); the `floq-firestore` skill
+**Files:**
+- `backend/firestore.rules` — additive partner read access (owner-only stays the default)
+- `shared/spec/schema.md` — `partnerships/{pairId}`, `partner_invites/{inviteId}`
+- `mobile/services/firebase/partners.ts` — `sendInvite` / `acceptInvite` / `endPartnership`, `usePartner()`, the partner-visible session view
+**Acceptance:**
+- `partnerships/{pairId}` (sorted-UID doc): `members[2]`, `status: pending | active | ended`, `created_at`. **One partner at a time.**
+- `partner_invites/{inviteId}`: sender → recipient (by email/username); recipient accept → creates the partnership
+- **Rules:** a partner may READ the other's completed-session **summaries** (minutes, score, when) + **scheduled** sessions — **NEVER task titles** (L4 privacy invariant holds); writes only to own docs; ending a partnership / deleting an account cleans up the edge
+- no leaderboard, no n:n friend graph
+- `tsc` + tests green
+
+### M7.1b 🔴 Paired streak + scheduled-session commitment surface
+**Owner:** Mohamed
+**Depends on:** M7.0, M4.4 (streak), M4.5/M4.6 (session lifecycle)
+**Unblocks:** S7.0
+**Skill:** `floq-storage` / `floq-firestore`
+**Status:** v1 design, subject to the L18 gate. Coupling designed **gentle** (L17 philosophy).
+**Files:** `mobile/services/session/partnership.ts` (pair-streak + scheduled-session model) + storage + async mirror
+**Acceptance:**
+- a user can **schedule** a session; the partner sees scheduled + completed (an **async** commitment surface — no live co-working; the async thesis holds)
+- **pair streak — gentle:** grace periods (travel/sick), and a partner's flake does **NOT** nuke your **individual** streak (L16/L17 spirit). Coupling strength is the **live variable to watch** at W8 (L17), not a locked choice.
+- session-end syncs the completion to the partnership
+- tests green
+
+### S7.0 🔴 Partnership UI + the activation funnel — THE make-or-break
+**Owner:** Mustafa (UX lead — the funnel is the highest-leverage surface in the whole pivot)
+**Depends on:** M7.0, M7.1b
+**Skill:** none (RN / Expo Router)
+**Status:** v1 design, subject to the L18 gate.
+**Spec references:** `decisions.md` L18; `@shared/spec/session-flow.md` (partnership flow)
+**Files:** onboarding partner step; invite / pending UX; partner views (their scheduled + completed); pair-streak display
+**Acceptance:**
+- onboarding offers "focus with someone?" — invite a partner **OR a clearly-available skip**. Solo is **never blocked** (mandatory pairing is the activation cliff — forbidden)
+- a partnerless / invite-pending user has a **fully good solo experience** while waiting (the on-ramp)
+- time-to-first-partner is minimized; invite-pending **and** accepted states both handled gracefully
+- partner's scheduled + completed sessions visible; pair streak shown; **no task titles** ever shown
+- both themes
+
+### S7.1b 🟡 Pair insight (post-pairing ML surface) — optional Phase-A polish
+**Owner:** Both (M data, S UI)
+**Depends on:** M7.1b, M5.x (ML)
+**Status:** v1, subject to the L18 gate.
+**Acceptance:**
+- surfaces overlapping good windows / shared patterns ("you both run strong Wednesday mornings")
+- per-user models stay **on-device** (L2 intact); only **coarse derived features** are shared — with the **known partner**, not a server (that's Phase B). No raw behavioral data leaves the device.
+
+> **Phase B (stranger-matching marketplace) is OUT OF SCOPE here** — conditional on the L18 gate, post-MVP, and it requires amending L2/L4 + likely capital. Do not build it in the MVP.
+
+---
+
+## Mohamed — W7 (ORIGINAL PLAN — ⚠️ SUPERSEDED by L18, retained for revert)
 
 ### M7.1 🔴 Friend graph schema (resolves O5)
 **Depends on:** M1.4

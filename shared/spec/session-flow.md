@@ -85,3 +85,14 @@ After Done, show a quick summary card before kicking the user to recovery:
 - "Recovery: X min" countdown to next session
 
 Then auto-dismiss after 8 seconds (or on tap) to a recovery screen.
+
+## Focus partnership (per `decisions.md` L18 — conviction bet, Phase A)
+
+The product is organized around a **focus partnership**. This section is a **v1 design subject to the L18 validation gate** (if paired users don't out-retain solos at the W8 beta, this reverts and the friends/leaderboard plan is restored).
+
+- **One partner at a time.** You invite **one** specific person (Phase A: a friend). Not a friend list, not a leaderboard. The constraint is the product.
+- **Solo is a fully-functional on-ramp.** A user with no partner — or with an invite still pending — has a complete solo experience. **Pairing is never mandatory** (mandatory pairing is the activation cliff). The make-or-break is **time-to-first-partner**, not the streak.
+- **Async commitment surface (not live co-working).** Your partner sees your **scheduled** sessions (a soft expectation) and your **completed** ones (minutes / score / when). They never see task titles (L4 invariant). This preserves the async thesis — showing up is visible, missing is visible, but there's no real-time obligation.
+- **Pair streak — gentle.** The partnership has a streak, designed with **grace periods** (travel / sick) and so that a **partner's flake does not nuke your individual streak** (L16/L17 spirit). How strong the coupling should be is the **live variable** measured at the W8 beta (L17), not a locked choice.
+- **Phase B (stranger-matching) is out of MVP scope** — conditional on the L18 gate; it would require amending L2/L4 and likely capital.
+

@@ -4,7 +4,7 @@
 
 ## Project
 
-Floq is a science-based deep-work app with a social accountability layer. A per-session adaptive focus timer computed from live context (task difficulty, time of day, fatigue, history), on-device behavioral ML, and async (Whoop-style) social metrics.
+Floq is a science-based deep-work app built around a **focus partnership** (per `shared/spec/decisions.md` **L18** — a committed conviction bet, 2026-05-27, with a validation gate and revert path). A per-session adaptive focus timer computed from live context (task difficulty, time of day, fatigue, history) and on-device behavioral ML make the experience intelligent; the **partnership** — you + one focus partner, shared streaks, async commitment — is the core loop (distribution + retention + moat). Solo stays a fully-functional on-ramp. *(Pre-pivot framing was "a solo focus app with an async Whoop-style social layer"; L18 promotes the social layer to the core, phased: friend-pairing now, stranger-matching only if validated. If the L18 gate fails, the product reverts to solo-first.)*
 
 Full product spec lives in `shared/spec/`. The most important specs are:
 

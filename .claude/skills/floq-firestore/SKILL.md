@@ -5,7 +5,7 @@ description: Use this skill whenever the user asks Claude to write, modify, or r
 
 # Floq Firestore — schema and rules skill
 
-This skill loads the data model and access rules for Floq's backend. Floq's social model is **friends-only** for MVP — anything that would expose data more broadly than friends needs explicit approval.
+This skill loads the data model and access rules for Floq's backend. Floq's social model is the **1:1 focus partnership** (per `shared/spec/decisions.md` **L18** — a committed conviction bet; the prior n:n friends-only model is **superseded but retained for the revert path**). Anything that would expose data beyond your one active partner needs explicit approval. The **task-title privacy invariant (L4) is unchanged** — titles never leave the device to a partner.
 
 ## Before you write any Firestore code
 
@@ -19,13 +19,15 @@ This skill loads the data model and access rules for Floq's backend. Floq's soci
 users/{uid}                       Single user document.
 users/{uid}/sessions/{sessionId}  Subcollection — completed sessions only.
 users/{uid}/tasks/{taskId}        Subcollection — current task queue (synced from SQLite).
-users/{uid}/social                Single doc — public-to-friends profile summary.
+users/{uid}/social                Single doc — partner-visible profile summary.
 
-friendships/{pairId}              Per resolved O5: bidirectional pair docs.
+partnerships/{pairId}             Per L18: the 1:1 focus-partner edge (supersedes the n:n friend graph).
                                   pairId = sorted(uid_a, uid_b).join('_')
-friend_requests/{requestId}       Pending requests.
+partner_invites/{inviteId}        Pending partner invites.
 
 llm_cache/{hash}                  Optional — shared LLM result cache by input hash.
+
+(friendships / friend_requests)   SUPERSEDED by L18 — retained in spec only for the revert path.
 ```
 
 If O5 in `decisions.md` is still open, do not pick a schema for friendships — surface the conflict.
