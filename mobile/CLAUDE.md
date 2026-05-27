@@ -77,10 +77,12 @@ Full CRUD: create / read (`topTask` + `+N hidden`) / update (edit fields, reorde
 - Regime-gated: hide forecast when `sessions_done < 7`. Show with wide bands at 7–13. Tight bands at 14+.
 - Empty state for cold regime: "We're still learning your rhythm."
 
-### Friends
-- Friends-only leaderboard (weekly, opt-in).
-- Async session feed cards: `{name} just completed {n} min — score {s}`.
-- Friend profile = score + streak only. **Never expose task names across users.**
+### Partner (was: Friends) — per L18
+- **One focus partner**, not a friend list / leaderboard (L18 supersedes the leaderboard plan; the old version is retained in `tasks.md` only for the revert path).
+- Partner view: their **scheduled** + **completed** sessions (minutes / score / when) + the **pair streak**. **Async** — no live co-working.
+- **Never expose task titles** to the partner (L4 invariant, unchanged).
+- The **activation funnel** (invite → pending → first paired session, with a genuinely good solo experience *while waiting* for a partner) is the make-or-break surface — see `tasks.md` S7.0. Mandatory pairing is forbidden (it's the activation cliff).
+- (The "Friends" tab may rename to "Partner"; defer the tab-label call to implementation.)
 
 ## First-session framing card
 
