@@ -24,7 +24,7 @@ In-app type (source of truth in the store; the Firestore mirror in `schema.md` u
 ```ts
 type Task = {
   id: string;
-  title: string;          // PRIVATE — never leaves the device to friends/social (L4)
+  title: string;          // PRIVATE — never leaves the device to a partner / `social` (L4)
   difficulty: 1 | 2 | 3 | 4 | 5;
   estMinutes: number;
   order: number;          // queue position; lower = higher priority; 0 = top/visible task
@@ -75,7 +75,7 @@ The store API is stable across both phases; only the backing store changes.
 - **W2 (M2.5):** Zustand `useTaskStore` backed by an MMKV atomic blob `floq.tasks` (same pattern as onboarding, M2.2). MMKV is the source of truth. Survives app kill.
 - **W4 (M4.2):** SQLite (`services/storage/tasks.ts`) becomes the source of truth; MMKV demotes to a fast-read cache. Tasks mirror **async** to Firestore `users/{uid}/tasks` (owner-only) for cross-device sync.
 
-**Privacy invariant (L4):** task titles never leave the device to friends or the `social` doc. The Firestore mirror is readable only by the owner.
+**Privacy invariant (L4):** task titles never leave the device to a partner or the `social` doc. The Firestore mirror is readable only by the owner.
 
 ## Surfaces
 

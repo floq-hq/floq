@@ -4,7 +4,9 @@
 
 ## Project
 
-Floq is a science-based deep-work app with a social accountability layer. A per-session adaptive focus timer computed from live context (task difficulty, time of day, fatigue, history), on-device behavioral ML, and async (Whoop-style) social metrics.
+Floq is a science-based deep-work app: a per-session adaptive **focus partnership** — a 1:1 pairing made intelligent by an on-device adaptive timer (live context: task difficulty, time of day, fatigue, history) + behavioral ML. Solo is a fully-functional on-ramp.
+
+> **Social-as-core — `shared/spec/decisions.md` L18 (locked 2026-05-27, plan committed 2026-05-28):** the social layer is the **core**, not a feature — a 1:1 focus partnership (the install + retention + moat loop), Phase A = friend-pairing (built W7), Phase B = stranger-matching (conditional, post-MVP). The W8 beta is a market read (do paired users out-retain solos?). A **one-step revert** to solo-first + the session card exists if the read fails or is ambiguous. Detail in L18 + `docs/strategy-social-as-core.md` + `docs/floq-direction-brief.md`.
 
 Full product spec lives in `shared/spec/`. The most important specs are:
 
@@ -113,7 +115,7 @@ These are operationally risky or research-backed. Stop and ask before touching:
 - **Plan mode before any non-trivial change.** Shift+Tab to toggle. Especially before touching the timer service, Firestore rules, or the ML pipeline.
 - **Reference files with `@path`** instead of pasting. Reduces token spend and stops you re-deriving from memory.
 - **Done means:** `pnpm typecheck` passes, `pnpm test` passes, no console errors on cold boot of the Expo dev client.
-- **Commit format:** `<type>(<scope>): <subject>` — types: `feat`, `fix`, `refactor`, `chore`, `ml`, `spec`. Scopes: `timer`, `session`, `onboarding`, `stats`, `friends`, `llm`, `firebase`, `ml`, `ui`.
+- **Commit format:** `<type>(<scope>): <subject>` — types: `feat`, `fix`, `refactor`, `chore`, `ml`, `spec`. Scopes: `timer`, `session`, `onboarding`, `stats`, `partner`, `llm`, `firebase`, `ml`, `ui`.
 - **One PR = one concern.** No drive-by refactors mixed with feature work.
 
 ## Things you do not know about this project (so ask)

@@ -10,7 +10,7 @@ If the task is not about UI, screens, components, navigation, or the React side 
 
 
 
-- Expo Router (file-based). Screens live in `app/`. Bottom tabs: Home, Session, Stats, Friends.
+- Expo Router (file-based). Screens live in `app/`. Bottom tabs: Home, Session, Stats, **Partner** (renamed from Friends per L18 — `app/(tabs)/friends.tsx` becomes `app/(tabs)/partner.tsx` when S7.0 lands).
 - TypeScript strict. No `any` without a `// reason: ...` comment on the same line.
 - Zustand for client state. One store per concern (`useSessionStore`, `useOnboardingStore`, `useTaskStore`, `useUserStore`). No mega-store.
 - TanStack Query for anything that reads from Firestore. Keys must be arrays, not strings.
@@ -77,10 +77,13 @@ Full CRUD: create / read (`topTask` + `+N hidden`) / update (edit fields, reorde
 - Regime-gated: hide forecast when `sessions_done < 7`. Show with wide bands at 7–13. Tight bands at 14+.
 - Empty state for cold regime: "We're still learning your rhythm."
 
-### Friends
-- Friends-only leaderboard (weekly, opt-in).
-- Async session feed cards: `{name} just completed {n} min — score {s}`.
-- Friend profile = score + streak only. **Never expose task names across users.**
+### Partner — per L18 (the core surface, not a feature)
+- **One focus partner**, not a friend list / leaderboard. The prior friends/leaderboard model lives in git history (pre-`spec/social-core-pivot`) for the L18 revert path — do not implement it.
+- Partner view: their **scheduled** + **completed** sessions (minutes / score / when) + the **pair streak** (gentle — grace periods, partner flake never nukes your individual streak). **Async** — no live co-working.
+- **Never expose task titles** to the partner (L4 invariant, unchanged).
+- Partner visibility is **opt-in at pairing** and **revoked when the partnership ends** — wire the consent UI in the invite-accept flow, and clear cached partner reads when status flips to `'ended'`.
+- The **activation funnel** (invite → pending → first paired session, with a genuinely good solo experience *while waiting* for a partner) is the make-or-break surface — see `tasks.md` S7.0. Mandatory pairing is forbidden (it's the activation cliff).
+- Rename the "Friends" tab to "Partner" when wiring S7.0.
 
 ## First-session framing card
 
@@ -95,7 +98,8 @@ Content lives in `app/_session-intro.tsx` and the copy is in `shared/spec/onboar
 - No tasks → friendly nudge to brain-dump (or add one manually).
 - Offline → cached tasks visible, sync indicator.
 - LLM failure → the same `ManualTaskForm` used for first-class manual add (not a one-off fallback form).
-- No friends yet → empty leaderboard with "add a friend" CTA.
+- No partner yet → Partner tab shows the invite affordance + a calm "your solo experience is fully available" reassurance (never a dead end — the activation funnel matters more than the streak; per L18).
+- Invite pending → Partner tab shows "waiting on \{name\}" with a resend/cancel affordance; solo flow stays unblocked.
 - Cold regime → "learning your rhythm" badge on stats.
 
 ## Performance budget

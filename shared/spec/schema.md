@@ -14,10 +14,10 @@ Legend: ✅ defined · 🧪 provisional (finalized by a later task) · ⏳ defer
 users/{uid}                        Single user document
 users/{uid}/sessions/{sessionId}   Subcollection — completed sessions (append-only)
 users/{uid}/tasks/{taskId}         Subcollection — current task queue (mirror of SQLite)
-users/{uid}/social                 Single doc — friends-visible profile summary
+users/{uid}/social                 Single doc — partner-visible profile summary (per L18)
 
-friendships/{pairId}               ⏳ PENDING O5 (M7.1)
-friend_requests/{requestId}        ⏳ PENDING O5 (M7.1)
+partnerships/{pairId}              ✅ Phase A (M7.0, per L18) — the 1:1 focus-partner edge
+partner_invites/{inviteId}         ✅ Phase A (M7.0, per L18)
 
 llm_cache/{hash}                   Shared LLM result cache (🧪 M2.3)
 ```
@@ -36,7 +36,7 @@ One doc per user, keyed by Firebase Auth UID. Created on first sign-up (M2.4).
 | `apple_id` | string | — | Set only for Apple Sign-In users |
 | `created_at` | Timestamp | ✅ | Server timestamp at sign-up |
 | `has_seen_intro` | boolean | ✅ | First-session framing card; default `false` |
-| `privacy` | `'friends' \| 'private'` | ✅ | **Default `'private'` on signup** |
+| `privacy` | `'friends' \| 'private'` | ✅ | **Default `'private'` on signup.** The `'friends'` literal is a legacy name (pre-L18); M7.0 renames it to `'partner'` (data + code), since under the partnership model the value gates partner-visibility, not a friend list. |
 | `onboarding` | map | — | Set when onboarding completes (M1.5) |
 
 `onboarding` map:
@@ -69,11 +69,11 @@ One doc per user, keyed by Firebase Auth UID. Created on first sign-up (M2.4).
 | `client_version` | string | ✅ | |
 | `model_version` | string | — | Set only when `regime === 'mature'` |
 
-Privacy: **never readable by friends.** Task titles are private.
+Privacy: **never readable by your partner.** Only the derived `social` summary is partner-visible (L18 / `floq-firestore` rule #3). Task titles are private (L4).
 
 ## `users/{uid}/social` ✅
 
-The only doc friends can read — and only when both users have `privacy: 'friends'` and a friendship exists. **Never write task titles here.** Updated on session end (M7.2, via cloud function).
+The partner-visible profile summary (per L18). Readable by your **active focus partner** (one at a time). **Never write task titles here.** Updated on session end.
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
@@ -110,11 +110,26 @@ Shared, derived cache of LLM task-parse results, keyed by an input hash (the has
 | `parsed` | array | ✅ | Parsed task objects (zod-validated client-side) |
 | `created_at` | Timestamp | ✅ | For TTL / eviction later |
 
-## `friendships/{pairId}` + `friend_requests/{requestId}` ⏳ PENDING O5 (M7.1)
+## `partnerships/{pairId}` + `partner_invites/{inviteId}` ✅ Phase A (M7.0, per L18)
 
-**Not defined — O5 is still open** in `shared/spec/decisions.md`. Do not write these collections until O5 is locked. Options on the table:
+**O5 is resolved by supersession (L18):** the social graph is the **1:1 focus-partner edge**, not an n:n friend graph. Shapes below are the **v1 design — finalized in M7.0**, which also adds the security rules. The old n:n `friendships` / `friend_requests` are dropped from the spec; revert path is git history (pre-`spec/social-core-pivot`), per L18.
 
-- **(a) Bidirectional doc** — `friendships/{uid_a}_{uid_b}` with sorted UIDs; one write per pair. Cheaper, harder to list "my friends."
-- **(b) Subcollection** — `users/{uid}/friends/{friend_uid}`; two writes per add. More standard, simpler queries.
+`partnerships/{pairId}` — `pairId = sorted(uidA, uidB).join('_')`, one doc per pair:
 
-Resolution + final shape land in **M7.1 (Friend graph schema)**, which also adds the per-collection security rules and the friend-request-acceptance cloud function. Until then, `backend/firestore.rules` denies all client access.
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `members` | string[2] | ✅ | the two UIDs (sorted) |
+| `status` | `'pending' \| 'active' \| 'ended'` | ✅ | |
+| `created_at` | Timestamp | ✅ | |
+| `pair_streak_days` | number | ✅ | gentle design — grace periods; a partner's flake never nukes individual streaks (L16/L17) |
+
+`partner_invites/{inviteId}` — pending invite, sender → recipient:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `from_uid` | string | ✅ | sender |
+| `to_identifier` | string | ✅ | recipient email or username |
+| `status` | `'pending' \| 'accepted' \| 'declined'` | ✅ | accept → creates the partnership |
+| `created_at` | Timestamp | ✅ | |
+
+**Access (rules land in M7.0):** a partner may READ the other's completed-session **summaries** + **scheduled** sessions (minutes / score / when) — **NEVER task titles** (L4 invariant holds). Partner visibility is **opt-in at pairing**, shown plainly, and revoked by ending the partnership (M7.0 acceptance). Phase A stays on-device-friendly; only Phase B (stranger-matching, out of MVP scope, conditional on the W8 market read) would require sharing derived data server-side. Until M7.0, `backend/firestore.rules` stays owner-only.
