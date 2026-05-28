@@ -534,7 +534,7 @@ Goal by end of week: completed sessions have a focus score, sessions persist to 
 - End-early → **Save** writes `completed = 0`, task stays in queue (no `markDone`), no recovery enforced; **Discard** writes nothing, task stays
 - App killed mid-session → on relaunch `getRestorableSession()` returns the dangling session; **resume** re-enters with wall-clock-correct elapsed, **save** → `completed:0` partial, **discard** → clears the store
 - End-early → **Save** computes and stores `focus_score` (M4.1) for the partial too (the `focus_score` column is NOT NULL)
-- saved `completed = 0` partials are **included in both** `getCurrentStreak()` (M4.4) and the weekly-score / leaderboard aggregation (M4.3, M7.2) — saving a partial means real focus happened; only **discarded** sessions never count (per L16, supersedes session-flow.md "Completed = tapped Done")
+- saved `completed = 0` partials are **included in both** `getCurrentStreak()` (M4.4) and the weekly-score aggregation (M4.3) / partner-visible `social` doc (M7.0) — saving a partial means real focus happened; only **discarded** sessions never count (per L16, supersedes session-flow.md "Completed = tapped Done")
 - Migration 002 runs on first launch; existing rows backfill `completed = 1`; `schema.sql` reference updated, never edited in place
 - `tsc` + `npm test` green
 
@@ -648,7 +648,7 @@ Goal by end of week: completed sessions have a focus score, sessions persist to 
 - No tasks → friendly nudge
 - Offline → cached data visible + sync indicator
 - LLM failure → manual entry form
-- No friends yet → leaderboard empty state with "add a friend" CTA
+- No partner yet → Partner tab shows the invite affordance + a calm "solo is fully available" reassurance (never a dead end — per L18 the activation funnel matters more than the streak)
 - Cold regime → "learning your rhythm" badge on stats
 
 ---
@@ -810,21 +810,19 @@ Goal by end of week: forecast graph is rendered, warming regime behaves correctl
 
 ---
 
-# Week 7 — Partnership core (was: Social layer)
+# Week 7 — Partnership core
 
-> **⚠️ SUPERSEDED BY L18 (2026-05-27) — conviction bet, see `decisions.md` L18 + `docs/strategy-social-as-core.md`.**
-> The original W7 (friends + leaderboard + async feed — M7.1–M7.3, S7.1–S7.2, **retained below for the L18 revert path**) is replaced by the **focus-partnership** plan below. All partnership tasks are **v1 designs subject to the L18 validation gate**; if the gate fails (paired users don't out-retain solos), revert to the original tasks and ship solo-first + the session card.
+> **Per L18 (2026-05-27) — social-as-core:** the W7 plan is the **focus partnership** (`docs/strategy-social-as-core.md`, `docs/floq-direction-brief.md`). The prior W7 friend-graph / leaderboard / async-feed tasks (M7.1–M7.3, S7.1–S7.2) are retained in **git history** (pre-`spec/social-core-pivot`) for the L18 revert path — not dual-maintained here.
 
-Goal (revised): a user can pair with **one** focus partner, see the partner's scheduled + completed sessions, share a **gently-designed** pair streak, and — critically — a new solo user has a great experience **while waiting for a partner**. The make-or-break is the **activation funnel (time-to-first-partner)**, not the streak.
+Goal: a user can pair with **one** focus partner, see the partner's scheduled + completed sessions, share a **gently-designed** pair streak, and — critically — a new solo user has a great experience **while waiting for a partner**. The make-or-break is the **activation funnel (time-to-first-partner)**, not the streak.
 
-## Partnership tasks (Phase A — friend-pairing) — NEW per L18
+## Mohamed — W7
 
 ### M7.0 🔴 Partner edge + invite + partner-visible session service (resolves O5 via L18)
 **Owner:** Mohamed
 **Depends on:** M2.4 (auth), M4.2 (sessions in SQLite + Firestore mirror)
 **Unblocks:** S7.0
 **Skill:** `floq-firestore`
-**Status:** v1 design, subject to the L18 gate.
 **Spec references:** `decisions.md` L18 + (resolved) O5; `schema.md` (`partnerships` / `partner_invites`); the `floq-firestore` skill
 **Files:**
 - `backend/firestore.rules` — additive partner read access (owner-only stays the default)
@@ -843,7 +841,7 @@ Goal (revised): a user can pair with **one** focus partner, see the partner's sc
 **Depends on:** M7.0, M4.4 (streak), M4.5/M4.6 (session lifecycle)
 **Unblocks:** S7.0
 **Skill:** `floq-storage` / `floq-firestore`
-**Status:** v1 design, subject to the L18 gate. Coupling designed **gentle** (L17 philosophy).
+**Spec references:** `decisions.md` L18; coupling designed **gentle** (L17 philosophy — `recovery_mod`-style soft pressure, no punitive streak resets across the pair)
 **Files:** `mobile/services/session/partnership.ts` (pair-streak + scheduled-session model) + storage + async mirror
 **Acceptance:**
 - a user can **schedule** a session; the partner sees scheduled + completed (an **async** commitment surface — no live co-working; the async thesis holds)
@@ -851,11 +849,14 @@ Goal (revised): a user can pair with **one** focus partner, see the partner's sc
 - session-end syncs the completion to the partnership
 - tests green
 
+---
+
+## Mustafa — W7
+
 ### S7.0 🔴 Partnership UI + the activation funnel — THE make-or-break
 **Owner:** Mustafa (UX lead — the funnel is the highest-leverage surface in the whole pivot)
 **Depends on:** M7.0, M7.1b
 **Skill:** none (RN / Expo Router)
-**Status:** v1 design, subject to the L18 gate.
 **Spec references:** `decisions.md` L18; `@shared/spec/session-flow.md` (partnership flow)
 **Files:** onboarding partner step; invite / pending UX; partner views (their scheduled + completed); pair-streak display
 **Acceptance:**
@@ -868,81 +869,18 @@ Goal (revised): a user can pair with **one** focus partner, see the partner's sc
 ### S7.1b 🟡 Pair insight (post-pairing ML surface) — optional Phase-A polish
 **Owner:** Both (M data, S UI)
 **Depends on:** M7.1b, M5.x (ML)
-**Status:** v1, subject to the L18 gate.
+**Spec references:** `decisions.md` L18 (L2/L4 invariants)
 **Acceptance:**
 - surfaces overlapping good windows / shared patterns ("you both run strong Wednesday mornings")
 - per-user models stay **on-device** (L2 intact); only **coarse derived features** are shared — with the **known partner**, not a server (that's Phase B). No raw behavioral data leaves the device.
 
-> **Phase B (stranger-matching marketplace) is OUT OF SCOPE here** — conditional on the L18 gate, post-MVP, and it requires amending L2/L4 + likely capital. Do not build it in the MVP.
+> **Phase B (stranger-matching marketplace) is OUT OF SCOPE here** — conditional on the W8 market read (L18), post-MVP, and it would require amending L2/L4 + likely capital. Do not build it in the MVP.
 
 ---
 
-## Mohamed — W7 (ORIGINAL PLAN — ⚠️ SUPERSEDED by L18, retained for revert)
+# Week 8 — Polish, QA, TestFlight ship — partnership market read
 
-### M7.1 🔴 Friend graph schema (resolves O5)
-**Depends on:** M1.4
-**Skill:** `floq-firestore`
-**Acceptance:**
-- O5 locked in `decisions.md` — likely the bidirectional pair doc per the skill
-- Firestore rules updated for friendships, friend_requests, social
-- Cloud function for friend-request acceptance deployed (creates friendship doc, deletes request)
-
-### M7.2 🔴 Social profile sync
-**Depends on:** M3.3 (session writes), M7.1
-**Skill:** `floq-firestore`
-**Files:**
-- `mobile/services/firebase/social.ts` — `updateSocialProfile()` called on session end
-- Cloud function trigger on `sessions` collection write that updates `users/{uid}/social`
-**Acceptance:**
-- Profile shows display_name, current_streak, weekly_score, last_session info
-- Task titles never written to social doc (privacy invariant)
-- Friends can read social doc, nobody else can
-
-### M7.3 🔴 Friend list + leaderboard data
-**Depends on:** M7.1
-**Skill:** `floq-firestore`
-**Files:**
-- `mobile/services/firebase/friends.ts` — `useFriendUids()`, `useFriendsSocialDocs()`, `sendFriendRequest()`, `acceptFriendRequest()`
-**Acceptance:**
-- Friend list loads in <500ms after sign-in
-- Leaderboard query batches if friendUids > 10
-- Pending requests visible inbox-style
-
----
-
-## Mustafa — W7
-
-### S7.1 🔴 Friends screen UI
-**Depends on:** S1.3, M7.3
-**Skill:** none
-**Files:**
-- `mobile/app/(tabs)/friends.tsx`
-- `mobile/components/friends/Leaderboard.tsx`
-- `mobile/components/friends/SessionFeed.tsx`
-- `mobile/components/friends/FriendProfileSheet.tsx`
-**Acceptance:**
-- Leaderboard sorted by weekly_focus_score, descending
-- Session feed shows latest 20 friend sessions
-- Tap a row → profile sheet (score, streak only, NO task details)
-- Empty state when no friends yet
-
-### S7.2 🔴 Add friend flow
-**Depends on:** S7.1, M7.3
-**Skill:** none
-**Files:**
-- `mobile/app/add-friend.tsx`
-- `mobile/components/friends/FriendRequestList.tsx`
-**Acceptance:**
-- Search by username/email
-- Send request → recipient sees a pending request
-- Accept → both users now see each other in leaderboard within seconds
-- Privacy settings: "Who can find me" (anyone with email / nobody)
-
----
-
-# Week 8 — Polish, QA, TestFlight ship
-
-Goal by end of week: TestFlight build live, 10–15 beta users from lab + friends, no P0 bugs.
+Goal by end of week: TestFlight build live, **5–7 pairs (10–15 beta users) recruited as pairs** from lab + friends, no P0 bugs, and a written go/hold/revert call on the partnership thesis (B8.6) per `decisions.md` L18.
 
 ## Both — W8
 
@@ -966,11 +904,12 @@ Goal by end of week: TestFlight build live, 10–15 beta users from lab + friend
 ### S8.3 🔴 EAS Build to TestFlight
 **Depends on:** all of W7 done
 **Skill:** none
+**Spec references:** `decisions.md` L18 (recruit as **pairs**, not individuals — the W8 beta is the partnership market read)
 **Acceptance:**
 - `eas build --platform ios --profile preview` succeeds
 - Build uploaded to App Store Connect
 - TestFlight beta group created
-- 10–15 invites sent to lab + friends
+- 10–15 invites sent **as pairs** (5–7 pairs minimum) to lab + friends — per L18 the beta tests pair vs solo retention, so cohort shape matters
 - First-launch crash-free rate target: > 99%
 
 ### M8.4 🔴 Backend monitoring setup
@@ -986,6 +925,18 @@ Goal by end of week: TestFlight build live, 10–15 beta users from lab + friend
 - TestFlight feedback link in app (Settings)
 - Slack channel / Discord for beta testers
 - Issues triaged daily for the first 5 days post-ship
+
+### B8.6 🔴 Partnership market read — leading indicators + go/revert call (per L18)
+**Owner:** Mohamed (decider, pre-committed in L18); both gather data
+**Depends on:** S8.3 (beta shipped to pairs)
+**Skill:** none
+**Spec references:** `decisions.md` L18 (gate criteria + revert path)
+**Acceptance:**
+- 7- and 14-day cohort readout: do paired users return at the points solo users start fading? (signal, not significance — n is tiny)
+- invite acceptance rate measured: of invites sent, what % were accepted and led to a first paired session?
+- session-card share/screenshot signal logged (unprompted share is the marketing-loop proof)
+- written go/revert call by Mohamed: **graduate** (begin Phase B planning + consider raise) · **hold** (keep Phase A as-is for App Store launch) · **revert** (ship solo-first + session card, per the L18 one-step revert). Decision recorded as a new Locked entry in `decisions.md`.
+- ambiguity default per L18: if the read is unclear, **revert to solo-first** for App Store launch — do NOT advance to Phase B on weak data
 
 ---
 
@@ -1016,8 +967,8 @@ Before Mohamed leaves, the following MUST be done (preferably by end of W4, late
 - ✅ M4.2 — SQLite persistence
 - ✅ M5.2 — regime router
 
-After that, Mohamed's remaining tasks (forecast service polish, TFLite model retraining, social profile sync, friend graph) can be done async with reduced focus time, or pushed to post-return.
+After that, Mohamed's remaining tasks (forecast service polish, TFLite model retraining, partner edge + partner-visible profile sync per L18) can be done async with reduced focus time, or pushed to post-return.
 
-Mustafa's work in W5–W8 (stats UI, forecast graph rendering, friends UI, polish) is mostly independent of further ML work if the services above are stable.
+Mustafa's work in W5–W8 (stats UI, forecast graph rendering, partner UI + activation funnel per L18, polish) is mostly independent of further ML work if the services above are stable.
 
 If Mohamed is gone for any of W5–W8, Mustafa stubs the ML services with deterministic mocks behind the same interfaces — Mohamed swaps in the real implementations on return.

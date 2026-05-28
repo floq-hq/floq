@@ -146,7 +146,7 @@ Pinned exact (no tilde) in mobile/package.json.
 - **W2 (M2.5):** Zustand `useTaskStore` + pure `services/tasks/queue.ts` + MMKV atomic blob `floq.tasks` (mirrors M2.2 onboarding). MMKV is the source of truth.
 - **W4 (M4.2, extended):** SQLite `services/storage/tasks.ts` becomes the source of truth; MMKV demotes to a fast-read cache; async mirror to Firestore `users/{uid}/tasks` (owner-only). `schema.md` un-provisions that collection then.
 
-**Privacy invariant (unchanged, per L4):** task titles never leave the device to friends / `social`; the `users/{uid}/tasks` mirror is owner-only.
+**Privacy invariant (unchanged, per L4):** task titles never leave the device to a partner / `social`; the `users/{uid}/tasks` mirror is owner-only.
 
 **Implementation:** new **M2.5** (data layer) + **S2.6** (manual-add + CRUD UI); **M4.2** extended to "session **+ task** persistence"; **S2.4** / **S3.3** acceptance tightened. UI surfaces: a shared `ManualTaskForm` (used by both first-class manual add and the LLM-failure path) + a `TaskQueueSheet` opened from the "+N hidden" caption.
 
@@ -175,7 +175,7 @@ One distraction per background→foreground episode, logged via the M3.2 funnel 
 **Three end paths:**
 1. **DONE (finished).** Always available. Completes the session: writes a full record (`completed: true`), `markDone` promotes the next task, focus score computed (M4.1), recovery break **recomputed from actual minutes** (below), streak credit, → summary. If `actual > planned`, the excess is recorded as `overrun_minutes`.
 2. **End early / "I stopped" (didn't finish).** A separate, understated affordance. **Prompts each time** — *Save progress* or *Discard*:
-   - **Save** → writes a record with `completed: false`. Its **focus score is still computed (M4.1) and counts toward the weekly / leaderboard score** — real focus time happened, the user just had to leave before finishing the task (revised per Mohamed 2026-05-27). Task **stays in the queue** — no `markDone`.
+   - **Save** → writes a record with `completed: false`. Its **focus score is still computed (M4.1) and counts toward the weekly partner-visible score** — real focus time happened, the user just had to leave before finishing the task (revised per Mohamed 2026-05-27). Task **stays in the queue** — no `markDone`.
    - **Discard** → no record written. Task stays.
    - Either way → returns to Home; **no recovery break enforced** (it wasn't a completed focus session).
 3. **Kill mid-session + relaunch.** On next launch, detect the dangling active session (M3.2's MMKV mirror) and **prompt: Resume / Save / Discard.** Resume re-enters `/focus` with wall-clock-correct elapsed; Save writes a `completed:false` partial (as in path 2); Discard drops it. The task is preserved in all three.
@@ -197,7 +197,7 @@ The DONE-vs-end-early distinction is the user's **intent**, not the elapsed time
 - `break_minutes` already exists — store the recomputed value there.
 - `CompletedSession` gains `completed: boolean` and `overrunMinutes: number`.
 
-**Invariants:** the **weekly focus score / leaderboard includes partial (`completed:false`) sessions** — real focus time is credited (a focus score is computed for every saved session). The **streak** counts any **saved** session — `completed: true` OR a saved `completed:false` partial (the user tapped *Save progress* because real focus happened); only **discarded** sessions never count (revised per Mohamed 2026-05-27, **supersedes** session-flow.md "Completed = tapped Done"). No minimum-minutes guard for MVP (saving is the qualifier; revisit post-MVP if abused). All saved sessions (partials included) are kept for ML/history and are owner-only like every session (`floq-firestore` rule #3) — never surfaced to friends/social.
+**Invariants:** the **weekly focus score (partner-visible via `social`, per L18) includes partial (`completed:false`) sessions** — real focus time is credited (a focus score is computed for every saved session). The **streak** counts any **saved** session — `completed: true` OR a saved `completed:false` partial (the user tapped *Save progress* because real focus happened); only **discarded** sessions never count (revised per Mohamed 2026-05-27, **supersedes** session-flow.md "Completed = tapped Done"). No minimum-minutes guard for MVP (saving is the qualifier; revisit post-MVP if abused). All saved sessions (partials included) are kept for ML/history and are owner-only like every session (`floq-firestore` rule #3) — never surfaced to a partner; only the derived `social` summary is partner-visible.
 
 **Ownership:** **M4.5 (Mohamed)** — active-session lifecycle (`abandonSession`, restore detection/resume), partial-session write, migration 002, streak/aggregation handling. **M4.6 (Mohamed)** — overrun computation + break recalculation service, migration 003, planned/actual/overrun recording. **M4.8 / M4.9 (Mohamed)** — the end-early & restore **prompt dialogs**, the suggested-stop + progress display, and the overrun affordance on `/focus`. *Mohamed is taking the UI for these features himself* (deviation from the usual M→S split, per his call 2026-05-27).
 
@@ -235,10 +235,10 @@ The DONE-vs-end-early distinction is the user's **intent**, not the elapsed time
 
 **Implementation:** new **M4.7** in `tasks.md`. `timer.md` (rule #4 + the `hours_since_last` row → operationalized) and `session-flow.md` (rule #4) updated by M4.7 under owner review.
 
-### L18 — Strategic pivot: social-as-core (focus partnership), phased, as a conviction bet
+### L18 — Strategic pivot: social-as-core (focus partnership), phased
 
-**Date locked:** 2026-05-27
-**Status — read this first:** This is a **committed strategic direction**, recorded as a **conviction bet with an explicit validation gate and a written revert path** — **NOT** validated truth. It deliberately does **not** pre-lock detailed mechanics as product law (that was the rejected "L18/L19/L20" malpractice). The mechanics live in Phase-A tasks marked *v1, subject to the gate below*. Fully reversible: if the gate fails, see **Revert**.
+**Date locked:** 2026-05-27 (initial framing as bet); **plan committed:** 2026-05-28 (tasks + specs locked across `shared/spec/`, `mobile/CLAUDE.md`, `CLAUDE.md`, `.claude/skills/floq-firestore/`)
+**Status — read this first:** The **plan is locked** — we are building Phase A in W7 and shipping it to TestFlight in W8. The W8 beta is a **market read** (do paired users out-retain solos?), not a re-decide gate. If the W8 read clearly fails, the **one-step revert** is to ship solo-first + the session card for App Store launch and demote the partnership to an optional feature; if the read is **ambiguous**, the default is also revert (don't advance to Phase B on weak data). The earlier rejected framing ("L18/L19/L20" locking detailed mechanics as product law) is **not** what's done here — mechanics live in Phase-A tasks (`tasks.md` M7.0 / M7.1b / S7.0 / S7.1b) and are normal, mutable engineering specs.
 
 **Decision:** Reorganize the product around the **focus partnership**. Floq stops being "a solo focus app with a social layer" and becomes "a focus partnership made intelligent by the adaptive timer + on-device ML." Solo stays a fully-functional on-ramp (most people try solo first), but the product pulls toward pairing, because pairing is simultaneously the **install loop**, the **retention loop**, and the **moat** — the three things the solo plan structurally lacked.
 
@@ -252,7 +252,7 @@ The DONE-vs-end-early distinction is the user's **intent**, not the elapsed time
 
 **The gate is directional, not proof — and its weaknesses are named on purpose:** at n≈10–15, with a deliberately *gentle* streak and an *async* (not synchronous) commitment surface, a null/weak result is **ambiguous** — it can't cleanly separate "pairing doesn't work" from "gentle-async pairing doesn't work." Two disciplines guard against rationalizing past a failed gate: (1) the **kill decision and the decider (Mohamed) are pre-committed here, in writing, before the beta starts**; (2) if the W8 read is ambiguous, the default action is **revert to solo-first for launch and retest coupling/sync later** — NOT "build Phase B anyway." Coupling strength (gentle ↔ punitive) and async-vs-sync are variables for a *larger later test*, not the MVP beta.
 
-**Revert (one step):** if the gate fails, the superseded W7 plan (retained in `tasks.md`) is restored and we ship **solo-first + the session card** for the App Store launch; the partnership code becomes an optional feature. Nothing built in Phase A is wasted — the card, the ML, and the W4 lifecycle work are all path-agnostic.
+**Revert (one step):** if the W8 read fails (or is ambiguous), the prior W7 plan — friend-graph (M7.1), social profile sync (M7.2), friend list + leaderboard (M7.3), Friends screen (S7.1), add-friend flow (S7.2) — is restored from **git history** (last commit on `main` before the `spec/social-core-pivot` branch — `git show main:shared/spec/tasks.md` for the prior definitions; the partnership code in M7.x / S7.0 becomes an optional, demoted feature). For the App Store launch we ship **solo-first + the session card**. Nothing built in Phase A is wasted — the card, the ML, and the W4 lifecycle work are all path-agnostic. The dual-tree of superseded tasks is intentionally **not** maintained inside `tasks.md` — git is the revert source so the active spec stays unambiguous (per Mohamed 2026-05-28).
 
 **Monetization (free the loop, charge the depth):**
 - **Free, never paywalled:** solo timer, one partner, pairing/streaks, the session card. This is the growth+retention engine; paywalling it kills the loop.
@@ -264,8 +264,8 @@ The DONE-vs-end-early distinction is the user's **intent**, not the elapsed time
 
 **Supersedes:**
 - **O5 (friend-graph schema)** — resolved by supersession: the graph is the **1:1 partner edge** (`partnerships/{pairId}`), simpler than the n:n friend graph.
-- **The W7 plan** (M7.1–M7.3, S7.1–S7.2) — marked SUPERSEDED in `tasks.md`, replaced by the partnership tasks, **retained (not deleted)** for the revert path.
-- **CLAUDE.md** product description and **session-flow.md** social sections — updated to the partnership framing.
+- **The prior W7 plan** (M7.1–M7.3, S7.1–S7.2 — friends + leaderboard + async feed) — removed from `tasks.md`; retained in **git history** (pre-`spec/social-core-pivot`) for the revert path above.
+- **CLAUDE.md**, **mobile/CLAUDE.md**, the **floq-firestore** skill, **session-flow.md**, and **schema.md** — updated to the partnership framing.
 
 **Open architectural tension (face before Phase B, NOT now):** L2 (on-device, no server inference) and L4 (friends-only/private) are intact under Phase A but tension with Phase B matching (cross-user, server-side, stranger trust/safety). Resolve if/when Phase B is greenlit.
 
