@@ -87,18 +87,14 @@ export function insertSession(s: CompletedSession): void {
   });
 }
 
-/** Most recent sessions, newest first. Reassembles each session's distraction
- *  timestamps so the returned shape round-trips with the Firestore mirror. */
-export function getRecentSessions(n = 20): CompletedSession[] {
-  const db = getDb();
-  const rows = db.getAllSync<SessionRow>(
-    'SELECT * FROM sessions ORDER BY ended_at DESC LIMIT ?',
-    n,
-  );
+/** Join the distraction rows for a batch of session rows and return the full
+ *  CompletedSession array. Single SELECT for all sessions in the batch — keeps
+ *  the storage layer at most two queries per fetch regardless of N. */
+function rowsToSessions(rows: SessionRow[]): CompletedSession[] {
   if (rows.length === 0) return [];
 
   const placeholders = rows.map(() => '?').join(', ');
-  const dRows = db.getAllSync<{ session_id: string; ts: number }>(
+  const dRows = getDb().getAllSync<{ session_id: string; ts: number }>(
     `SELECT session_id, ts FROM distractions WHERE session_id IN (${placeholders}) ORDER BY ts ASC`,
     ...rows.map((r) => r.id),
   );
@@ -110,6 +106,50 @@ export function getRecentSessions(n = 20): CompletedSession[] {
   }
 
   return rows.map((r) => rowToSession(r, bySession.get(r.id) ?? []));
+}
+
+/** Most recent sessions, newest first. Reassembles each session's distraction
+ *  timestamps so the returned shape round-trips with the Firestore mirror. */
+export function getRecentSessions(n = 20): CompletedSession[] {
+  const rows = getDb().getAllSync<SessionRow>(
+    'SELECT * FROM sessions ORDER BY ended_at DESC LIMIT ?',
+    n,
+  );
+  return rowsToSessions(rows);
+}
+
+/** Sessions with `ended_at >= startMs`, newest first. Powers the M4.3 rolling-
+ *  window aggregations (weekly focus score, distraction rate). startMs is
+ *  expected to be a device-local-midnight epoch-ms; see services/stats. The
+ *  M4.5 `completed` column will land later — per L16, both DONE (`completed=1`)
+ *  AND saved partials (`completed=0`) feed the stats; only discarded sessions
+ *  never write a row, so this query stays correct without a `completed` filter. */
+export function getSessionsSince(startMs: number): CompletedSession[] {
+  const rows = getDb().getAllSync<SessionRow>(
+    'SELECT * FROM sessions WHERE ended_at >= ? ORDER BY ended_at DESC',
+    startMs,
+  );
+  return rowsToSessions(rows);
+}
+
+/** Every session's `ended_at` in chronological order. Lightweight (no distraction
+ *  join) — the streak calculation only needs the day-buckets timeline. Same L16
+ *  invariant applies (see getSessionsSince): no `completed` filter. */
+export function getAllSessionEndedAt(): number[] {
+  const rows = getDb().getAllSync<{ ended_at: number }>(
+    'SELECT ended_at FROM sessions ORDER BY ended_at ASC',
+  );
+  return rows.map((r) => r.ended_at);
+}
+
+/** Highest single-session focus_score in history, or null if there are no
+ *  sessions. SQLite returns one row with m=null on an empty table — normalize
+ *  to a plain null so callers don't have to unpack the shape. */
+export function getMaxFocusScore(): number | null {
+  const row = getDb().getFirstSync<{ m: number | null }>(
+    'SELECT MAX(focus_score) AS m FROM sessions',
+  );
+  return row?.m ?? null;
 }
 
 /** Count sessions completed today, for the cold-start fatigue modifier
