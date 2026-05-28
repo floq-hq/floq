@@ -4,10 +4,12 @@
  * screens are headerless by default and paint the themed background, so route
  * transitions never flash white.
  */
+import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { configureNotifications } from '../services/notifications';
 import { ThemeProvider, useTheme } from '../theme';
 
 function ThemedStack() {
@@ -36,6 +38,13 @@ function ThemedStack() {
 }
 
 export default function RootLayout() {
+  // One-time notification setup (S4.2): foreground display behavior + Android
+  // channel. Deliberately does NOT request permission — that's lazy, on the
+  // first scheduled reminder, never on app open.
+  useEffect(() => {
+    void configureNotifications();
+  }, []);
+
   return (
     // GestureHandlerRootView must wrap the whole app for gesture-handler (swipe
     // to delete, drag to reorder in the task queue) to receive touches.
