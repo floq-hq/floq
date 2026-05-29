@@ -120,8 +120,4 @@ These are operationally risky or research-backed. Stop and ask before touching:
 
 ## Things you do not know about this project (so ask)
 
-- Whether the user wants a particular Expo SDK version locked in (see `decisions.md`)
-- LLM provider choice (see `decisions.md`) — pending W1 spike
-- Mohamed-in-Egypt plan: sprint before he leaves vs. async-build (see `decisions.md`) — must be locked by end of W1
-
-If a task depends on one of these and the decision is still open in `decisions.md`, stop and surface it.
+If a task depends on a decision that's still open in `decisions.md`, stop and surface it instead of assuming.
