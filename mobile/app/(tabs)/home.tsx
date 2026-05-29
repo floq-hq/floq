@@ -35,7 +35,7 @@ export default function Home() {
   const hydrate = useTaskStore((s) => s.hydrate);
   const topTask = useTaskStore(selectTopTask);
   const hiddenCount = useTaskStore(selectHiddenCount);
-  const { onStart, launching, showIntro, onIntroDismiss } = useStartSession(topTask);
+  const { onStart, launching, launchError, showIntro, onIntroDismiss } = useStartSession(topTask);
 
   // Load the persisted queue once on first mount (mirrors the onboarding gate).
   useEffect(() => {
@@ -119,6 +119,14 @@ export default function Home() {
       ) : (
         <Button label="Brain-dump" onPress={openBrainDump} />
       )}
+      {/* PR4: surface compute-time failures (onboarding missing / top task
+          disappeared) instead of leaving the button stuck on "launching"
+          forever. Cleared on screen re-focus. */}
+      {launchError ? (
+        <Text variant="caption" color={theme.danger} style={styles.launchError}>
+          {launchError}
+        </Text>
+      ) : null}
 
       <FirstSessionFramingCard visible={showIntro} onDismiss={onIntroDismiss} />
     </View>
@@ -135,4 +143,5 @@ const styles = StyleSheet.create({
   hidden: { textAlign: 'center' },
   empty: { alignItems: 'center', gap: 8 },
   center: { textAlign: 'center' },
+  launchError: { textAlign: 'center', marginTop: 8 },
 });

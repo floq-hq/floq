@@ -35,6 +35,10 @@ export function EndEarlySheet({ visible, onDismiss }: Props) {
   const abandonSession = useActiveSessionStore((s) => s.abandonSession);
   const reset = useActiveSessionStore((s) => s.reset);
   const [busy, setBusy] = useState(false);
+  // PR4 (audit Finding #5): show a brief inline confirmation before routing
+  // home so the user knows the partial was saved. ~800ms is long enough to
+  // read, short enough to not feel like a loading spinner.
+  const [saved, setSaved] = useState<{ minutes: number } | null>(null);
 
   function exitToHome() {
     onDismiss();
@@ -43,15 +47,18 @@ export function EndEarlySheet({ visible, onDismiss }: Props) {
 
   function onSave() {
     setBusy(true);
+    let partialMinutes = 0;
     try {
-      abandonSession(); // writes completed:false partial; clears the mirror
+      const partial = abandonSession(); // writes completed:false partial; clears the mirror
+      partialMinutes = partial?.actualFocusMinutes ?? 0;
       // Mirror the DONE wiring (focus.tsx onDone): refresh Stats immediately
       // so a tab-switch right after Save shows the partial, not stale numbers.
       queryClient.invalidateQueries({ queryKey: statsKeys.all });
     } finally {
       setBusy(false);
     }
-    exitToHome();
+    setSaved({ minutes: partialMinutes });
+    setTimeout(exitToHome, 800);
   }
 
   function onDiscard() {
@@ -86,20 +93,33 @@ export function EndEarlySheet({ visible, onDismiss }: Props) {
             },
           ]}
         >
-          <Text variant="heading" style={styles.title}>
-            Stop this session?
-          </Text>
-          <Text variant="body" color={theme.textMuted} style={styles.body}>
-            You can save what you've focused so far — the time counts toward your
-            stats and streak. Discarding ends the session without a record. The
-            task stays in your queue either way.
-          </Text>
+          {saved ? (
+            <>
+              <Text variant="heading" style={styles.title}>
+                Saved
+              </Text>
+              <Text variant="body" color={theme.textMuted} style={styles.body}>
+                {`${saved.minutes} min focused · counted toward your stats and streak. Task stays in your queue.`}
+              </Text>
+            </>
+          ) : (
+            <>
+              <Text variant="heading" style={styles.title}>
+                Stop this session?
+              </Text>
+              <Text variant="body" color={theme.textMuted} style={styles.body}>
+                You can save what you've focused so far — the time counts toward your
+                stats and streak. Discarding ends the session without a record. The
+                task stays in your queue either way.
+              </Text>
 
-          <View style={styles.actions}>
-            <Button label="Save progress" onPress={onSave} loading={busy} />
-            <Button label="Discard" variant="secondary" onPress={onDiscard} />
-            <Button label="Cancel" variant="ghost" onPress={onDismiss} />
-          </View>
+              <View style={styles.actions}>
+                <Button label="Save progress" onPress={onSave} loading={busy} />
+                <Button label="Discard" variant="secondary" onPress={onDiscard} />
+                <Button label="Cancel" variant="ghost" onPress={onDismiss} />
+              </View>
+            </>
+          )}
         </Pressable>
       </Pressable>
     </Modal>

@@ -19,7 +19,7 @@
  * Params: `breakMinutes` + optional `taskId` / `taskTitle` (for the
  * Mark-done affordance) + a fallback `nextTaskId` (older path).
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   StyleSheet,
   TextInput,
@@ -67,6 +67,17 @@ export default function RecoveryScreen() {
 
   const breakMinutes = Math.max(0, Number(params.breakMinutes ?? 0));
   const breakSeconds = breakMinutes * 60;
+
+  // PR4 (audit Finding #6): a 0-minute recovery has no meaning — render
+  // nothing, kick to Home. Without this the countdown shows "00:00", the
+  // `done` state flips on mount, and the CTAs look like a real recovery
+  // that already ended. Cancel any stale break reminder on the way out.
+  useEffect(() => {
+    if (breakMinutes <= 0) {
+      void cancelBreakReminder();
+      router.replace('/home');
+    }
+  }, [breakMinutes]);
 
   // The just-finished task identity (from focus.tsx → summary → here). If it's
   // still in the queue, the Mark-task-done affordance shows.

@@ -19,6 +19,7 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, Text } from '../ui';
 import { resolveRestore } from '../../services/session/restore';
+import { cancelBreakReminder } from '../../services/notifications';
 import { useActiveSessionStore } from '../../stores/useActiveSessionStore';
 import type { ActiveSession } from '../../services/session/types';
 import { useTheme } from '../../theme';
@@ -44,6 +45,11 @@ export function RestoreSessionPrompt({ session, onResolved }: Props) {
 
   function onResume() {
     setBusy('resume');
+    // PR4: symmetric with useStartSession.launch — entering a session must
+    // cancel any pending end-of-break reminder. A session killed long enough
+    // ago could still have a break reminder armed; without this it fires
+    // mid-resumed-Session 2 (audit Finding #2).
+    void cancelBreakReminder();
     // Routing into /focus with the same plan re-enters the in-flight session;
     // the screen reads the existing active session from the store on mount.
     router.replace({

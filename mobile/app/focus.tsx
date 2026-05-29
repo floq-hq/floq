@@ -83,7 +83,27 @@ export default function SessionScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ taskId?: string; plan?: string }>();
   const plan = parsePlan(params.plan);
-  const task = useTaskStore((s) => s.tasks.find((t) => t.id === params.taskId));
+  // PR4 (audit Finding #3): if the user deleted the task between starting the
+  // session and the kill, the task store doesn't have the id anymore — the
+  // mount-effect would early-return and the timer would freeze at 00:00
+  // (same symptom as Bug #7, different root cause). Fall back to the
+  // SessionTask snapshot already on the dangling ActiveSession blob, which
+  // is exactly what it was captured for. Reads-only — no queue mutation.
+  const taskFromQueue = useTaskStore((s) => s.tasks.find((t) => t.id === params.taskId));
+  const taskFromActive = useActiveSessionStore((s) =>
+    s.active && s.active.taskId === params.taskId ? s.active.task : null,
+  );
+  const task = taskFromQueue
+    ? taskFromQueue
+    : taskFromActive
+      ? {
+          // Reshape SessionTask → the minimal Task fields the screen reads.
+          id: params.taskId ?? '',
+          title: taskFromActive.title,
+          difficulty: taskFromActive.difficulty,
+          estMinutes: taskFromActive.estMinutes,
+        }
+      : null;
   const startSession = useActiveSessionStore((s) => s.startSession);
   const endSession = useActiveSessionStore((s) => s.endSession);
 

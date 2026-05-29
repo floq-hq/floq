@@ -21,14 +21,22 @@ import type { Task } from '../../services/tasks';
 
 export function useStartSession(topTask: Task | null) {
   const [launching, setLaunching] = useState(false);
+  const [launchError, setLaunchError] = useState<string | null>(null);
   const [showIntro, setShowIntro] = useState(false);
 
-  // Returning from a session refocuses the screen — re-enable START.
-  useFocusEffect(useCallback(() => setLaunching(false), []));
+  // Returning from a session refocuses the screen — re-enable START and clear
+  // any stale launch error (a previous failure shouldn't sit forever).
+  useFocusEffect(
+    useCallback(() => {
+      setLaunching(false);
+      setLaunchError(null);
+    }, []),
+  );
 
   const launch = useCallback(() => {
     if (!topTask || launching) return;
     setLaunching(true);
+    setLaunchError(null);
     // Cancel any pending end-of-break notification — the user is starting again
     // before the break ended (L17: skippable recovery), so "Recovery's almost
     // up" mid-Session 2 would be noise. Fire-and-forget; never blocks the start.
@@ -41,7 +49,18 @@ export function useStartSession(topTask: Task | null) {
           params: { taskId: topTask.id, plan: JSON.stringify(plan) },
         });
       } catch (err) {
+        // PR4 (audit Finding #4) — previously the catch logged in dev and
+        // silently swallowed in prod, leaving the START button stuck on
+        // "launching" forever. Now we surface a one-line caption next to
+        // START so the user knows what went wrong (and the button re-enables).
         if (__DEV__) console.warn('[session] failed to start session', err);
+        const message =
+          err instanceof Error && /onboarding/i.test(err.message)
+            ? 'Finish onboarding to start a session.'
+            : err instanceof Error && /no task found/i.test(err.message)
+              ? 'Your top task is gone — pick another or brain-dump a new one.'
+              : 'Couldn’t start a session. Try again.';
+        setLaunchError(message);
         setLaunching(false);
       }
     }, 0);
@@ -58,5 +77,5 @@ export function useStartSession(topTask: Task | null) {
     launch();
   }, [launch]);
 
-  return { onStart, launching, showIntro, onIntroDismiss };
+  return { onStart, launching, launchError, showIntro, onIntroDismiss };
 }

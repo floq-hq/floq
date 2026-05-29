@@ -168,7 +168,13 @@ export function computeSessionPlan(
   // clamp wins for tiny tasks (the science floor still holds — a 5-min task
   // gets a 15-min session, not 8). The cap lives here, NOT in coldStart.ts —
   // the frozen formula stays untouched (decisions.md L20).
-  const taskCap = Math.ceil(task.estMinutes * TASK_ESTIMATE_BUFFER);
+  //
+  // PR4 (audit Finding #8): `Math.ceil(0 × 1.5) = 0` would collapse the
+  // recommendation to the lower clamp for a corrupted / zero-estimate task.
+  // Treat `estMinutes <= 0` as "no usable estimate" — Infinity makes
+  // `min(focus, Infinity)` a true no-op so the formula governs.
+  const taskCap =
+    task.estMinutes > 0 ? Math.ceil(task.estMinutes * TASK_ESTIMATE_BUFFER) : Infinity;
   const capped = Math.min(depletedFocus, taskCap);
 
   const adjustedFocus = clamp(capped, FOCUS_MIN, FOCUS_MAX);

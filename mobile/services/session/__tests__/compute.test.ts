@@ -257,6 +257,20 @@ describe('computeSessionPlan — task-estimate cap (L20)', () => {
     expect(plan.focusMinutes).toBe(51);
   });
 
+  it('treats estMinutes = 0 as no-cap so the formula governs (audit Finding #8)', () => {
+    // Without the guard: ceil(0 × 1.5) = 0 → min(focus, 0) = 0 → clamp to
+    // FOCUS_MIN (15). The guard makes the cap Infinity → formula = 51.
+    store.tasks = [makeTask({ estMinutes: 0 })];
+    const plan = computeSessionPlan('t1', { now: morning10 });
+    expect(plan.focusMinutes).toBe(51);
+  });
+
+  it('treats negative estMinutes (corrupted task) as no-cap too', () => {
+    store.tasks = [makeTask({ estMinutes: -10 })];
+    const plan = computeSessionPlan('t1', { now: morning10 });
+    expect(plan.focusMinutes).toBe(51);
+  });
+
   it('cap bites only when stricter than depletion + clamp combined', () => {
     // High depletion (3rd today, gap=0): pre-cap formula goes to 38 already.
     // Cap with 25-min estimate: ceil(25 × 1.5) = 38 → same number → no

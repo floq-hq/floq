@@ -29,7 +29,11 @@ import * as firebaseAuthNs from 'firebase/auth';
 import { app } from './init';
 import { ensureUserDoc } from './userDoc';
 import { mmkvAuthStorage } from './authStorage';
+import { useActiveSessionStore } from '../../stores/useActiveSessionStore';
 import { useOnboardingStore } from '../../stores/useOnboardingStore';
+import { useSettingsStore } from '../../stores/useSettingsStore';
+import { useTaskStore } from '../../stores/useTaskStore';
+import { queryClient } from '../queryClient';
 
 // getReactNativePersistence is exported only from Firebase's React Native build
 // (Metro resolves it via the `react-native` condition), so it exists at runtime
@@ -143,11 +147,22 @@ export async function signOut(): Promise<void> {
   } catch {
     // not signed in with Google / native module unavailable — nothing to revoke
   }
-  // Clear user-scoped client state. reset() wipes the in-memory store AND the
-  // floq.onboarding MMKV blob. The LLM cache (floq.llmCache.*) is intentionally
-  // preserved — it's derived, non-PII, and survives account switches — and
-  // Firebase already cleared its own tokens via firebaseSignOut above.
+  // PR4 (audit-pass): wipe ALL user-scoped client state so User A's data can
+  // never bleed into User B's first screens. Each store's reset() clears its
+  // in-memory state AND its MMKV blob (floq.onboarding / floq.tasks /
+  // floq.settings / floq.session.active). queryClient.clear() drops the
+  // TanStack cache so the next stats query rebuilds from User B's SQLite.
+  //
+  // The LLM cache (floq.llmCache.*) is intentionally preserved — it's derived,
+  // non-PII, and survives account switches (decisions.md L13). Firebase's own
+  // tokens were already cleared by firebaseSignOut above. SQLite (sessions,
+  // tasks history) is per-device and is repopulated by User B's own activity;
+  // we don't wipe it here because there's no per-user SQLite isolation in MVP.
   useOnboardingStore.getState().reset();
+  useTaskStore.getState().reset();
+  useSettingsStore.getState().reset();
+  useActiveSessionStore.getState().reset();
+  queryClient.clear();
 }
 
 // --- Current user hook -----------------------------------------------------
