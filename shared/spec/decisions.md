@@ -431,6 +431,20 @@ Moved to Locked — see **L17**. Outcome: recovery is **skippable, not hard-enfo
 **Owner:** Mohamed (timer/ML), with Mustafa for any onboarding-question UI.
 **Notes:** MVP keeps (a). The derivation is isolated to `hourBucket()` behind `computeSessionPlan`'s `ctx` in `mobile/services/session/compute.ts`, so (b) can replace it without touching the frozen cold-start formula or S3.0. The frozen `time_match_mod` constants (1.0 / 0.85) are unaffected either way — only the bucket-derivation method changes.
 
+### O11 — Timer-model flywheel vs. L2 (zero data egress)
+
+**Must resolve by:** Post-MVP — before any retraining pipeline or public claim that the mature model "beats the formula." The MVP resolution is chosen below, so this is non-blocking for W5.
+**Raised by:** Mohamed, 2026-05-29.
+**Owner:** Mohamed (ML).
+
+**The tension:** The offline retraining pipeline (PyTorch → TFLite, M5.3+) has no real training fuel under L2. A global mature model trained on synthetic data cannot be *validated* as beating the cold-start formula without a real holdout set — which doesn't exist without egress. (A synthetic-trained net can still capture nonlinear cross-terms the linear formula can't — fatigue × time-of-day × difficulty — so it is **unvalidated**, not cosmetic; but "beats the formula" is unprovable on synthetic data alone.) Note: this is the **same L2/L4 fault line L18 already identified for Phase B stranger-matching, one layer down** and previously unlogged.
+
+**MVP resolution (chosen — Option 3, descope):** The mature regime ships as a synthetic-trained **placeholder** (or simply falls back to warming — `regimeRouter.routeSessionPlan` already does this defensively, M5.2). The real on-device adaptation story for the MVP is the **warming blend** — L2-clean, computed on the user's own session history, zero egress, true today. The MLP is a **post-MVP upgrade**, not the current differentiator. **Lead the pitch with the warming blend** ("from session 5 the app learns your rhythm on-device, privately, in real time") — do not overclaim a learned model in copy or pitch. Under this resolution **M5.3 is a pipeline-proof task** (run synthetic training → export `floq-timer-v1.tflite` → drop in `mobile/assets/models/` → wire M5.4), not an accuracy project — its goal is proving the full PyTorch→TFLite→on-device-inference path end-to-end so the router has a real model to route to.
+
+**Post-MVP path (Option 2 — consented opt-in telemetry):** Anonymized session vectors with an explicit user toggle flow to the pipeline → a real flywheel that improves the global model for everyone (cf. Whoop — the privacy stance becomes a *feature you offer*, not a constraint you defend). This **amends L2** to: *"behavioral data leaves the device only with explicit user consent, anonymized, for model improvement."* Pairs with L18's Phase-B amendment. Must be resolved (with the amended L2 written as a new Locked entry) before any public claim that the mature model beats the formula.
+
+**Deferred (Option 4 — on-device per-user fine-tuning):** Keeps L2 fully intact, no flywheel needed, genuine per-user personalization. **Blocked** by `react-native-fast-tflite` being inference-only; the clean iOS path (Core ML `MLUpdateTask`) needs a custom native module or a library swap — a real lift, post-MVP at minimum. Revisit if Option 2's telemetry is rejected by users. Named here so it's a deliberate deferral, not an oversight.
+
 ---
 
 ## Decisions to revisit post-MVP (not now)
