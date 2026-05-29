@@ -4,7 +4,7 @@
 > **Method:** multi-agent sweep (8 dimensions × 3 rounds, loop-until-dry), every
 > finding cross-checked by 2 independent adversarial verifiers. `2/2` = both
 > verifiers confirmed; `1/2` = one confirmed, one skeptical (lower confidence).
-> **Status:** not yet fixed — backlog for a dedicated fix session.
+> **Status:** in progress — 2/32 fixed (both 🔴 HIGH, 2026-05-29). Remainder backlog for a dedicated fix session.
 
 **Ownership legend**
 - **[MUSTAFA]** — frontend (`app/`, `components/`, stores, `services/{tasks,llm,share,onboarding,notifications}`, theme).
@@ -17,13 +17,15 @@
 
 ## 🔴 HIGH — boot / crash lockouts
 
-- [ ] **1. [MUSTAFA] Onboarding boot hangs forever when offline** — `stores/useOnboardingStore.ts:51` (2/2)
+- [x] **1. [MUSTAFA] Onboarding boot hangs forever when offline** — `stores/useOnboardingStore.ts:51` (2/2) ✅ fixed 2026-05-29
   `hydrate()` has no try/catch. Offline + empty MMKV (fresh install / post-sign-out / new account on device) → `loadOnboarding`'s Firestore `getDoc` rejects (`unavailable`) → `set({hydrated:true})` never runs → root gate (`app/index.tsx:97`) stuck on the splash spinner permanently.
   **Fix:** wrap the await in try/catch; on failure still `set({ answers: null, draft: loadDraft(), hydrated: true })` (or make `loadOnboarding` swallow Firestore errors → null).
+  **Done:** wrapped the await in try/catch; on failure sets `{ answers: null, draft: loadDraft(), hydrated: true }` so the boot gate routes into onboarding instead of spinning.
 
-- [ ] **2. [MUSTAFA] Brain-dump crashes instead of falling back to manual entry** — `services/llm/parseTasks.ts:23` (2/2)
+- [x] **2. [MUSTAFA] Brain-dump crashes instead of falling back to manual entry** — `services/llm/parseTasks.ts:23` (2/2) ✅ fixed 2026-05-29
   `try/catch` only wraps `JSON.parse`, not the next line. A provider returning literal `null` → `(null).tasks` throws `TypeError`, escapes `validateTasks` AND `parseTasks` → breaks the "never let bad JSON reach UI; fall back to manual" contract.
   **Fix:** null/object-guard before property access, or wrap the whole `validateTasks` body in try/catch returning `null`.
+  **Done:** guarded the property access — non-object/`null` now flows to `safeParse` → `null` → manual-entry fallback, no throw.
 
 ---
 

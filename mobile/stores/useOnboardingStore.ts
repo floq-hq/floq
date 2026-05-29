@@ -49,10 +49,18 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
     }),
 
   hydrate: async (uid) => {
-    const answers = await loadOnboarding(uid);
-    // Restore the in-progress draft only when onboarding isn't finalized yet —
-    // a finalized user routes to Home and never re-enters the question flow.
-    set({ answers, draft: answers ? {} : loadDraft(), hydrated: true });
+    try {
+      const answers = await loadOnboarding(uid);
+      // Restore the in-progress draft only when onboarding isn't finalized yet —
+      // a finalized user routes to Home and never re-enters the question flow.
+      set({ answers, draft: answers ? {} : loadDraft(), hydrated: true });
+    } catch {
+      // Offline / Firestore unavailable on a fresh install (empty MMKV, so no
+      // local answers to fall back on): never strand the boot gate on the splash
+      // spinner. Treat as "not yet finalized", restore any local draft, and let
+      // app/index.tsx route into the onboarding flow.
+      set({ answers: null, draft: loadDraft(), hydrated: true });
+    }
   },
 
   finalize: async (uid) => {
