@@ -67,8 +67,8 @@ export default function Home() {
           <OfflineIndicator />
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Settings"
-            onPress={() => router.push('/settings')}
+            accessibilityLabel="More"
+            onPress={() => router.push('/more')}
             hitSlop={12}
           >
             <Text variant="heading" color={theme.textMuted}>

@@ -1,19 +1,20 @@
 /**
- * Settings (S3.5). Modal screen (registered in app/_layout.tsx) reached from the
- * Home header gear. Hosts the background-during-session policy picker and the
- * Sign-out affordance (relocated here from the W3 Stats stub when S4.1 replaced
- * it with the real Stats screen). Future settings slot in between the two.
+ * More tab — the app's settings / overflow surface. Hosts the background-during-
+ * session policy picker and Sign-out. Previously a modal (app/settings.tsx)
+ * reached from the Home gear; moved here when the 5-tab FloqTabBar nav landed
+ * ("More" → Settings), so it's now a first-class tab rather than a pushed modal.
+ * Future overflow items (about, feedback link, theme override) slot in here.
  */
 import { useState } from 'react';
 import { router } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Button, Text } from '../components/ui';
-import { BackgroundPolicySetting } from '../components/settings/BackgroundPolicySetting';
-import { signOut } from '../services/firebase';
-import { useTheme } from '../theme';
+import { Button, Text } from '../../components/ui';
+import { BackgroundPolicySetting } from '../../components/settings/BackgroundPolicySetting';
+import { signOut } from '../../services/firebase';
+import { useTheme } from '../../theme';
 
-export default function SettingsScreen() {
+export default function MoreTab() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const [signingOut, setSigningOut] = useState(false);
@@ -31,20 +32,10 @@ export default function SettingsScreen() {
   return (
     <View style={[styles.root, { backgroundColor: theme.bg, paddingTop: insets.top + 12 }]}>
       <View style={styles.header}>
-        <Text variant="title">Settings</Text>
-        <Pressable
-          onPress={() => router.back()}
-          hitSlop={12}
-          accessibilityRole="button"
-          accessibilityLabel="Close settings"
-        >
-          <Text variant="bodyMedium" color={theme.accent}>
-            Done
-          </Text>
-        </Pressable>
+        <Text variant="title">More</Text>
       </View>
 
-      <ScrollView contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + 24 }]}>
+      <ScrollView contentContainerStyle={styles.body}>
         <BackgroundPolicySetting />
         <View style={styles.signOut}>
           <Button
@@ -67,6 +58,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 16,
   },
-  body: { gap: 24 },
+  body: { gap: 24, paddingBottom: 24 },
   signOut: { marginTop: 8 },
 });

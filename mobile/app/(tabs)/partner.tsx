@@ -1,12 +1,12 @@
 /**
- * Friends tab — PLACEHOLDER, awaiting S7.0 (W7).
+ * Partner tab — PLACEHOLDER, awaiting S7.0 (W7).
  *
- * Per decisions.md L18 (social-as-core) this tab becomes the **Partner** tab
- * with a 1:1 focus-partnership UX — invite affordance, partner's scheduled +
- * completed sessions, gentle pair streak, and the activation funnel that's
- * the make-or-break of the pivot. The rename + the real UI both land with
- * S7.0 (mobile/CLAUDE.md: "Rename the 'Friends' tab to 'Partner' when wiring
- * S7.0"). For now: an L18-aligned placeholder that doesn't promise a
+ * Per decisions.md L18 (social-as-core) this tab carries the 1:1 focus-
+ * partnership UX — invite affordance, partner's scheduled + completed sessions,
+ * gentle pair streak, and the activation funnel that's the make-or-break of the
+ * pivot. The real UI lands with S7.0; the **tab rename Friends → Partner was
+ * brought forward here** with the FloqTabBar nav work (ahead of S7.0, per owner
+ * direction). For now: an L18-aligned placeholder that doesn't promise a
  * leaderboard / friend-list (both dead per L18) and reassures solo is fully
  * available today (no dead-end).
  */
@@ -15,12 +15,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '../../components/ui';
 import { useTheme } from '../../theme';
 
-export default function FriendsTab() {
+export default function PartnerTab() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   return (
     <View style={[styles.root, { backgroundColor: theme.bg, paddingTop: insets.top + 56 }]}>
-      <Text variant="title">Friends</Text>
+      <Text variant="title">Partner</Text>
       <Text variant="body" color={theme.textMuted} style={styles.copy}>
         Your focus partner lands soon. Solo is fully available today — nothing
         here blocks the rest of the app.
