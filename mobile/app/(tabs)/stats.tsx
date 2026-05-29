@@ -1,11 +1,11 @@
 /**
- * Stats (S4.1) — historical only. The forecast graph is W6 (S6.1).
+ * Stats (S4.1) — historical layer. The polished forecast chart is W6 (S6.1).
  *
  * Layout: hero weekly focus score → summary cards (current streak,
  * distractions/hr — the "now" glance) → Personal best section (all-time:
  * highest score, longest streak, best session — S5.1) → forecast section
- * (regime-gated: shows the cold "still learning your rhythm" badge while < 7
- * sessions, hidden otherwise until the real forecast lands) → recent sessions.
+ * (S5.2 — regime-gated: cold badge / warming wide-band / mature tight-band,
+ * owned by ForecastSection) → recent sessions.
  *
  * Pull-to-refresh invalidates all M4.3 stats queries; the same invalidation
  * fires automatically from app/focus.tsx onDone, so a freshly-completed
@@ -17,45 +17,22 @@
 import { useCallback, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { Text } from '../../components/ui';
 import { OfflineIndicator } from '../../components/OfflineIndicator';
 import { HeroScore } from '../../components/stats/HeroScore';
 import { SummaryCards } from '../../components/stats/SummaryCards';
 import { PersonalBest } from '../../components/stats/PersonalBest';
+import { ForecastSection } from '../../components/stats/ForecastSection';
 import { SessionList } from '../../components/stats/SessionList';
-import { getAllSessionEndedAt } from '../../services/storage/sessions';
 import { statsKeys } from '../../services/stats/useStats';
 import { useTheme } from '../../theme';
-
-/**
- * Sessions required to unlock the forecast chart. Per `shared/spec/ml-regimes.md`
- * §"Performance forecast (Model B — separate from the timer model)":
- *   0–6 sessions  → forecast hidden, learning badge shown
- *   7–13 sessions → forecast visible with wide confidence bands
- *   14+ sessions  → tight bands
- * Note: this is the FORECAST gate, NOT the regime router cutoff (the timer
- * regime is cold at <5, warming at <14, mature at ≥14). Different concept,
- * different number. The previous local name (`FORECAST_MIN_SESSIONS`) conflated
- * the two — renamed for clarity per audit Finding #15.
- */
-const FORECAST_MIN_SESSIONS = 7;
 
 export default function StatsTab() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
-
-  // Total session count for the forecast regime gate. Local to this screen
-  // (Mohamed's services/stats/ stays untouched); same `['stats']` namespace so
-  // it's invalidated alongside the other M4.3 queries.
-  const { data: totalSessions = 0 } = useQuery({
-    queryKey: ['stats', 'totalSessions'],
-    queryFn: () => getAllSessionEndedAt().length,
-  });
-
-  const forecastLocked = totalSessions < FORECAST_MIN_SESSIONS;
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -90,21 +67,7 @@ export default function StatsTab() {
 
       <PersonalBest />
 
-      {forecastLocked && (
-        <View style={[styles.forecast, { borderColor: theme.border }]}>
-          <Text variant="caption" color={theme.textMuted}>
-            Forecast
-          </Text>
-          <Text variant="bodyMedium" style={styles.forecastBadge}>
-            We're still learning your rhythm.
-          </Text>
-          <Text variant="caption" color={theme.textMuted}>
-            {`${FORECAST_MIN_SESSIONS - totalSessions} more session${
-              FORECAST_MIN_SESSIONS - totalSessions === 1 ? '' : 's'
-            } to unlock your forecast.`}
-          </Text>
-        </View>
-      )}
+      <ForecastSection />
 
       <Text variant="heading" style={styles.section}>
         Recent
@@ -123,12 +86,5 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 4,
   },
-  forecast: {
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 16,
-    gap: 4,
-  },
-  forecastBadge: { marginTop: 2 },
   section: { marginTop: 8 },
 });
