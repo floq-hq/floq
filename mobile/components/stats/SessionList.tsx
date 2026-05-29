@@ -11,7 +11,7 @@
  * Up to 20 rows here, so a plain map inside the parent ScrollView is correct;
  * FlashList nested in a ScrollView is the known anti-pattern.
  */
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { Text } from '../ui';
 import { useTheme } from '../../theme';
@@ -21,7 +21,12 @@ import type { CompletedSession } from '../../services/session/types';
 
 const MAX_ROWS = 20;
 
-export function SessionList() {
+export function SessionList({
+  onSelectSession,
+}: {
+  /** Tap a row to open its shareable card (S6.0). Omit to render static rows. */
+  onSelectSession?: (session: CompletedSession) => void;
+}) {
   const theme = useTheme();
   const { data } = useQuery({
     queryKey: ['stats', 'recentSessions'],
@@ -41,13 +46,21 @@ export function SessionList() {
   return (
     <View>
       {sessions.map((s) => (
-        <SessionRow key={s.id} theme={theme} session={s} />
+        <SessionRow key={s.id} theme={theme} session={s} onPress={onSelectSession} />
       ))}
     </View>
   );
 }
 
-function SessionRow({ theme, session }: { theme: Theme; session: CompletedSession }) {
+function SessionRow({
+  theme,
+  session,
+  onPress,
+}: {
+  theme: Theme;
+  session: CompletedSession;
+  onPress?: (session: CompletedSession) => void;
+}) {
   // PR5 (audit Finding #10): a negative focus score gets a softer color
   // signal so it doesn't read as a flat number. The score itself is correct
   // (M4.1 formula allows negatives — see focusScore.ts), but a plain "-19"
@@ -56,9 +69,16 @@ function SessionRow({ theme, session }: { theme: Theme; session: CompletedSessio
   const score = Math.round(session.focusScore);
   const scoreColor = score < 0 ? theme.danger : theme.textMuted;
   return (
-    <View
-      style={[styles.row, { borderBottomColor: theme.border }]}
-      accessibilityRole="summary"
+    <Pressable
+      onPress={onPress ? () => onPress(session) : undefined}
+      disabled={!onPress}
+      style={({ pressed }) => [
+        styles.row,
+        { borderBottomColor: theme.border },
+        pressed && onPress ? { backgroundColor: theme.bgPressed } : null,
+      ]}
+      accessibilityRole={onPress ? 'button' : 'summary'}
+      accessibilityHint={onPress ? 'Opens a shareable card for this session' : undefined}
       accessibilityLabel={`${session.task.title}, ${session.actualFocusMinutes} minutes, focus score ${score}`}
     >
       <View style={styles.titleCol}>
@@ -72,7 +92,14 @@ function SessionRow({ theme, session }: { theme: Theme; session: CompletedSessio
       <Text variant="bodyMedium" color={scoreColor}>
         {score}
       </Text>
-    </View>
+      {onPress && (
+        // Visible "shareable" cue so the row reads as a tap-to-share target —
+        // the always-available way to share any past session (S6.0).
+        <Text variant="bodyMedium" color={theme.accent} style={styles.shareGlyph}>
+          ↗
+        </Text>
+      )}
+    </Pressable>
   );
 }
 
@@ -99,4 +126,5 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   titleCol: { flex: 1, gap: 2 },
+  shareGlyph: { fontWeight: '700' },
 });

@@ -13,11 +13,13 @@
  * Streak reads `useCurrentStreak()` (TanStack) directly — the prior
  * `useUserStore.currentStreak` was Zustand state with no writer (PR3 Bug #4).
  */
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Text } from '../components/ui';
+import { Button, Text } from '../components/ui';
+import { SessionCardModal } from '../components/session/SessionCardModal';
+import type { SessionCardData } from '../services/share/sessionInsight';
 import { useCurrentStreak } from '../services/stats/useStats';
 import { useTheme } from '../theme';
 
@@ -54,6 +56,15 @@ export default function SessionSummary() {
   const taskTitle = typeof params.taskTitle === 'string' ? params.taskTitle : '';
   const streak = useCurrentStreak().data ?? 0;
 
+  // S6.0: optional "share this session" affordance. Building the card needs a
+  // focus score, so it's gated on a present score. Opening the card pauses the
+  // auto-route (below) so it can't yank the sheet away mid-share.
+  const [shareCard, setShareCard] = useState<SessionCardData | null>(null);
+  const openShare = useCallback(() => {
+    if (score == null) return;
+    setShareCard({ focusScore: score, focusMinutes: minutes, distractionCount: distractions });
+  }, [score, minutes, distractions]);
+
   // Route to /recovery — UNLESS the recomputed break is 0 (L21: the user
   // focused too little to need recovery). In that case skip recovery and
   // go straight Home; reuses the PR4 #6 sentinel + the existing /recovery
@@ -75,11 +86,13 @@ export default function SessionSummary() {
   }, [breakMinutes, taskId, taskTitle]);
 
   // Auto-route after 8s; tap-anywhere does the same. The recovery screen is
-  // the dwell space; this summary is a glance.
+  // the dwell space; this summary is a glance. Paused while the share card is
+  // open so it can't route away mid-share.
   useEffect(() => {
+    if (shareCard) return;
     const t = setTimeout(routeNext, AUTO_ROUTE_MS);
     return () => clearTimeout(t);
-  }, [routeNext]);
+  }, [routeNext, shareCard]);
 
   return (
     <Pressable
@@ -108,11 +121,17 @@ export default function SessionSummary() {
           <Stat label="Focus score" value={score == null ? '—' : String(Math.round(score))} />
           <Stat label="Streak" value={String(streak)} />
         </View>
+
+        {score != null && (
+          <Button label="Share this session" variant="secondary" onPress={openShare} />
+        )}
       </View>
 
       <Text variant="caption" color={theme.textMuted} style={styles.footer}>
         Tap to continue
       </Text>
+
+      <SessionCardModal data={shareCard} onClose={() => setShareCard(null)} />
     </Pressable>
   );
 }
