@@ -28,7 +28,11 @@ export interface ActiveSession {
 
 /** The full session outcome, assembled at Done (S3.3) once the timer's elapsed
  *  minutes and the focus score (M4.1) are known, then handed to writeSession.
- *  M3.2 owns only the distraction fields; the caller supplies the rest. */
+ *  M3.2 owns only the distraction fields; the caller supplies the rest.
+ *
+ *  M4.5 (L16) added `completed`: `true` for DONE, `false` for a saved end-early
+ *  or kill/restore partial. Discarded sessions never reach this shape.
+ *  M4.6 (L16) added `overrunMinutes`: minutes focused past `plan.focusMinutes`. */
 export interface CompletedSession {
   id: string;
   taskId: string;
@@ -39,6 +43,8 @@ export interface CompletedSession {
   actualFocusMinutes: number;
   focusScore: number; // M4.1; can be negative
   distractions: number[]; // epoch-ms timestamps
+  completed: boolean; // M4.5: true=DONE, false=saved partial
+  overrunMinutes: number; // M4.6: max(0, actualFocus − plannedFocus)
   clientVersion: string;
   modelVersion?: string; // only when regime === 'mature'
 }

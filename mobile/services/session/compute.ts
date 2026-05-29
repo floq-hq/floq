@@ -1,4 +1,4 @@
-// Session compute orchestrator (M3.3).
+// Session compute orchestrator (M3.3 + M4.7).
 //
 // Turns "user tapped START on task X" into a concrete SessionPlan. This is the
 // orchestration layer ABOVE the frozen timer service: it gathers live inputs
@@ -6,20 +6,38 @@
 // TimerInputs, and runs the regime router — then hands back the plan. It READS
 // the timer service; it never modifies it.
 //
-// W3 is cold-regime only — no behavioral history exists yet (SQLite lands in
-// M4.2) — so it calls computeColdStart directly. The M5.2 regime router and M5.4
-// warming wiring slot in behind this same signature later; callers (S3.0) don't
-// change. The pure core (hourBucket / buildSessionInputs) has no React and no
-// I/O; only the thin computeSessionPlan wrapper reads stores via getState().
+// M4.7 (L17): a depletion debt is applied here, as a post-modifier on the
+// regime-router output. The recovery effect is operationalized AS the
+// `context.hours_since_last` input the timer.md Inputs table already listed —
+// it lives here, NOT inside coldStart.ts (frozen). The cold-start constants
+// stay untouched; this layer reads them through the export-only lifts in
+// coldStart.ts (BREAK_RATIO, FOCUS_MIN/MAX, BREAK_MIN/MAX, fatigueMod).
+//
+// W3 was cold-only. From M4.7 the cold path runs through the same `dmod`
+// adjustment — for a first session of the day (no prior session inside the
+// recovery window) the modifier is 1.0, so behavior is unchanged.
 
-import { computeColdStart } from '../timer';
+import {
+  BREAK_MAX,
+  BREAK_MIN,
+  BREAK_RATIO,
+  FOCUS_MAX,
+  FOCUS_MIN,
+  computeColdStart,
+  fatigueMod,
+} from '../timer/coldStart';
 import type { HourBucket, SessionPlan, TimerInputs } from '../timer';
 import { toOnboardingSeed } from '../onboarding/seed';
 import type { OnboardingAnswers } from '../onboarding/types';
 import type { Task } from '../tasks';
 import { useOnboardingStore } from '../../stores/useOnboardingStore';
 import { useTaskStore } from '../../stores/useTaskStore';
-import { countSessionsToday } from '../storage';
+import {
+  countSessionsToday,
+  getLastSessionEndedAt,
+  getRecentSessions,
+} from '../storage/sessions';
+import { depletionMod, recoveryMod } from './recovery';
 
 type DayOfWeek = TimerInputs['context']['day_of_week']; // 0..6 (Sun..Sat)
 
@@ -27,11 +45,20 @@ type DayOfWeek = TimerInputs['context']['day_of_week']; // 0..6 (Sun..Sat)
 // (M4.2: counted from SQLite when omitted — see computeSessionPlan); the rest
 // are still defaulted until their sources land. `now` is injectable so the
 // hour-bucket/decay derivation and the today-count are deterministic under test.
+// `recoveryGapMin` + `recommendedBreakMin` are injectable too so the M4.7
+// `recovery_mod` path stays deterministic under unit test (the defaults pull
+// from SQLite via getLastSessionEndedAt + the prior row's break_minutes).
 export interface SessionComputeContext {
   now?: number; // default Date.now()
   sessionsToday?: number; // default: countSessionsToday(now) from SQLite (M4.2)
   hoursSinceLast?: number; // default 24
   history?: { recent_focus_avg: number | null; recent_distract: number | null };
+  recoveryGapMin?: number; // default: derived from getLastSessionEndedAt()
+  recommendedBreakMin?: number; // default: derived from the previous session's break_minutes
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 // Local-time → hour bucket. Cutoffs: morning 05:00–11:59, afternoon
@@ -112,14 +139,83 @@ export function computeSessionPlan(
   const sessionsToday = ctx.sessionsToday ?? countSessionsToday(now);
   const inputs = buildSessionInputs(task, answers, { ...ctx, now, sessionsToday });
 
-  // W3: cold regime only. M5.2 regime router / M5.4 warming wiring replace this
-  // line later, behind the same signature.
-  const plan = computeColdStart(inputs);
+  // M4.7 / L17 — depletion debt as a post-modifier on the regime router output.
+  //
+  // The mechanism: compute the cold-start output as if there were NO same-day
+  // fatigue (`sessions_today = 0` ⇒ `fatigueMod = 1.0`), then apply the floored
+  // joint depletion modifier (`max(0.75, fatigueMod × recoveryMod)`) in place
+  // of the two separate factors. This is the L17 "in place of" semantics:
+  //   final_focus = clamp(15, 90) × round(base × distract × diff × time × DMOD)
+  // The frozen `coldStart.ts` constants stay untouched — this path reads them
+  // through the lifted exports only.
+  const noFatigueInputs: TimerInputs = {
+    ...inputs,
+    context: { ...inputs.context, sessions_today: 0 },
+  };
+  const baseline = computeColdStart(noFatigueInputs);
+
+  const { gapMin, prevBreak } = resolveRecoveryGap(ctx);
+  const fmod = fatigueMod(sessionsToday);
+  const rmod = recoveryMod(gapMin, prevBreak);
+  const dmod = depletionMod(fmod, rmod);
+
+  const adjustedFocus = clamp(
+    Math.floor(baseline.focusMinutes * dmod),
+    FOCUS_MIN,
+    FOCUS_MAX,
+  );
+  const adjustedBreak = clamp(
+    Math.floor(adjustedFocus * BREAK_RATIO),
+    BREAK_MIN,
+    BREAK_MAX,
+  );
+
+  const plan: SessionPlan = {
+    focusMinutes: adjustedFocus,
+    breakMinutes: adjustedBreak,
+    regime: baseline.regime,
+  };
 
   if (typeof __DEV__ !== 'undefined' && __DEV__) {
     // eslint-disable-next-line no-console
-    console.log('[session] computeSessionPlan', { taskId, plan });
+    console.log('[session] computeSessionPlan', {
+      taskId,
+      plan,
+      fmod,
+      rmod,
+      dmod,
+      gapMin,
+      prevBreak,
+    });
   }
 
   return plan;
+}
+
+/** Resolve `gapMin` + `prevBreak` for the M4.7 depletion path. Caller-provided
+ *  values win (tests inject); otherwise we read the most-recent ended_at + its
+ *  break_minutes from SQLite. First session of the day (no prior row inside
+ *  the recovery window) yields a non-positive `prevBreak`, which `recoveryMod`
+ *  treats as "no prior session" (returns 1.0 — no penalty). */
+function resolveRecoveryGap(ctx: SessionComputeContext): {
+  gapMin: number;
+  prevBreak: number;
+} {
+  if (
+    ctx.recoveryGapMin !== undefined &&
+    ctx.recommendedBreakMin !== undefined
+  ) {
+    return { gapMin: ctx.recoveryGapMin, prevBreak: ctx.recommendedBreakMin };
+  }
+  const lastEndedAt = getLastSessionEndedAt();
+  if (lastEndedAt === null) {
+    return { gapMin: 0, prevBreak: 0 }; // recoveryMod returns 1.0 on prevBreak <= 0
+  }
+  const now = ctx.now ?? Date.now();
+  const gapMin = Math.max(0, (now - lastEndedAt) / 60_000);
+  // Pull the most-recent row's stored break_minutes — already recomputed-at-DONE
+  // per M4.6 (`finalize` writes the recomputed value into the stored plan).
+  const recent = getRecentSessions(1);
+  const prevBreak = recent[0]?.plan.breakMinutes ?? 0;
+  return { gapMin, prevBreak };
 }

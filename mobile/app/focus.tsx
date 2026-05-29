@@ -41,13 +41,13 @@ import { SessionTimer } from '../components/session/SessionTimer';
 import { DistractionButton } from '../components/session/DistractionButton';
 import { SessionToast } from '../components/session/SessionToast';
 import { phaseFor, type Phase, type SessionPlan } from '../services/timer';
-import { writeSession } from '../services/session/distraction';
+import { saveCompletedSession } from '../services/storage/sessions';
+import { finalizeOnDone } from '../services/session/finalize';
 import { startBackgroundPolicy } from '../services/session/backgroundPolicy';
 import { backgroundDistractionMessage } from '../services/session/backgroundNotice';
 import { scheduleBreakReminder } from '../services/notifications';
 import { queryClient } from '../services/queryClient';
 import { statsKeys } from '../services/stats/useStats';
-import type { CompletedSession } from '../services/session/types';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useActiveSessionStore } from '../stores/useActiveSessionStore';
 import { useTheme } from '../theme';
@@ -164,37 +164,13 @@ export default function SessionScreen() {
       return;
     }
 
-    const endedAt = Date.now();
-    // Wall-clock from the store's startedAt (M3.2) — not the frame clock, which
-    // pauses while backgrounded — so the recorded minutes aren't undercounted.
-    const minutesFocused = Math.max(0, Math.round((endedAt - snapshot.startedAt) / 60_000));
-    const distractions = snapshot.distractions.length;
-
-    // Focus score is M4.1 — a frozen formula in Mohamed's timer service that isn't
-    // merged yet, and we must not reimplement it. No real score to compute: write 0
-    // as a placeholder and show "—" in the summary. One-line swap to
-    // computeFocusScore(...) the moment M4.1 lands.
-    const focusScore: number | null = null;
-
-    const completed: CompletedSession = {
-      id: snapshot.sessionId,
-      taskId: snapshot.taskId,
-      task: snapshot.task,
-      plan: snapshot.plan,
-      startedAt: snapshot.startedAt,
-      endedAt,
-      actualFocusMinutes: minutesFocused,
-      focusScore: focusScore ?? 0,
-      distractions: snapshot.distractions,
-      clientVersion: CLIENT_VERSION,
-    };
-
-    // Best-effort write via Mohamed's persistence layer (M3.2). Don't block the
-    // hand-off to the summary on the network, and don't lose the rest of the flow
-    // if it fails (offline / signed-out) — SQLite becomes the source of truth in M4.2.
-    writeSession(completed).catch((err) => {
-      if (__DEV__) console.warn('[session] writeSession failed', err);
-    });
+    // M4.5 / M4.6: assembly + focus score + overrun + recomputed break all
+    // come from one place (services/session/finalize). Local truth is SQLite
+    // via saveCompletedSession; the Firestore mirror is fired async with the
+    // failure swallowed (offline / signed-out is fine — SQLite already holds
+    // the truth).
+    const completed = finalizeOnDone(snapshot, Date.now(), CLIENT_VERSION);
+    saveCompletedSession(completed);
 
     // Refresh the Stats screen immediately (S4.1 wiring of M4.3 handoff). Without
     // this the just-completed session wouldn't show up until staleTime (30s).
@@ -204,7 +180,7 @@ export default function SessionScreen() {
     // permission on first use (a session just ended — a deliberate action, not
     // app open). Silent no-op if permission is denied. NOTE: when M4.8/M4.9 land
     // the session-end rework, this call moves with the DONE/end-early branch.
-    void scheduleBreakReminder(snapshot.plan.breakMinutes);
+    void scheduleBreakReminder(completed.plan.breakMinutes);
 
     // Task promotion (session-flow.md §Task promotion): drop the current task; the
     // next auto-promotes, or an empty queue shows Home's brain-dump prompt.
@@ -213,10 +189,10 @@ export default function SessionScreen() {
     router.replace({
       pathname: '/session-summary',
       params: {
-        minutes: String(minutesFocused),
-        distractions: String(distractions),
-        breakMinutes: String(snapshot.plan.breakMinutes),
-        ...(focusScore != null ? { score: String(focusScore) } : {}),
+        minutes: String(completed.actualFocusMinutes),
+        distractions: String(completed.distractions.length),
+        breakMinutes: String(completed.plan.breakMinutes),
+        score: String(completed.focusScore),
       },
     });
   }, [endSession, markDone]);

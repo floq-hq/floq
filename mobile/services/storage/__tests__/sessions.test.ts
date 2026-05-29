@@ -20,6 +20,7 @@ import {
   getSessionsSince,
   getAllSessionEndedAt,
   getMaxFocusScore,
+  getLastSessionEndedAt,
 } from '../sessions';
 
 function makeSession(over: Partial<CompletedSession> = {}): CompletedSession {
@@ -33,6 +34,8 @@ function makeSession(over: Partial<CompletedSession> = {}): CompletedSession {
     actualFocusMinutes: 50,
     focusScore: 37,
     distractions: [],
+    completed: true,
+    overrunMinutes: 0,
     clientVersion: '1.0.0',
     ...over,
   };
@@ -184,5 +187,73 @@ describe('saveCompletedSession', () => {
     writeSessionMock.mockImplementation(() => Promise.reject(new Error('offline')));
     expect(() => saveCompletedSession(makeSession())).not.toThrow();
     expect(getRecentSessions()).toHaveLength(1);
+  });
+});
+
+// M4.5 (L16) + M4.6: the schema gained `completed` (1=DONE / 0=saved partial)
+// and `overrun_minutes`. Both round-trip; both feed aggregations without a
+// filter (per L16 — discarded sessions never write a row in the first place).
+describe('completed + overrun_minutes (M4.5 + M4.6)', () => {
+  it('round-trips a DONE session with the defaults', () => {
+    insertSession(makeSession());
+    const [s] = getRecentSessions();
+    expect(s.completed).toBe(true);
+    expect(s.overrunMinutes).toBe(0);
+  });
+
+  it('round-trips a saved end-early partial', () => {
+    insertSession(
+      makeSession({
+        id: 'partial',
+        completed: false,
+        actualFocusMinutes: 18,
+        overrunMinutes: 0,
+        focusScore: -6, // real focus score is computed for partials too (L16)
+      }),
+    );
+    const [s] = getRecentSessions();
+    expect(s.id).toBe('partial');
+    expect(s.completed).toBe(false);
+    expect(s.focusScore).toBe(-6);
+  });
+
+  it('round-trips a non-zero overrun', () => {
+    insertSession(
+      makeSession({
+        actualFocusMinutes: 65, // planned 50 → 15-min overrun
+        overrunMinutes: 15,
+      }),
+    );
+    const [s] = getRecentSessions();
+    expect(s.actualFocusMinutes).toBe(65);
+    expect(s.overrunMinutes).toBe(15);
+  });
+
+  it('keeps DONE + saved-partial mixed batches in a single result set (L16 invariant)', () => {
+    insertSession(makeSession({ id: 'done', endedAt: 3000, completed: true }));
+    insertSession(makeSession({ id: 'partial', endedAt: 4000, completed: false }));
+    // Both are returned by getSessionsSince + getAllSessionEndedAt — neither
+    // applies a `completed` filter (L16: saved partials count for stats/streak).
+    expect(getSessionsSince(0)).toHaveLength(2);
+    expect(getAllSessionEndedAt()).toEqual([3000, 4000]);
+  });
+});
+
+describe('getLastSessionEndedAt (M4.7 gap clock)', () => {
+  it('returns null on an empty DB', () => {
+    expect(getLastSessionEndedAt()).toBeNull();
+  });
+
+  it('returns the single most-recent ended_at', () => {
+    insertSession(makeSession({ id: 'old', endedAt: 1000 }));
+    insertSession(makeSession({ id: 'new', endedAt: 9000 }));
+    insertSession(makeSession({ id: 'mid', endedAt: 5000 }));
+    expect(getLastSessionEndedAt()).toBe(9000);
+  });
+
+  it('includes saved partials (same L16 invariant)', () => {
+    insertSession(makeSession({ id: 'done', endedAt: 1000 }));
+    insertSession(makeSession({ id: 'partial', endedAt: 2000, completed: false }));
+    expect(getLastSessionEndedAt()).toBe(2000);
   });
 });

@@ -26,7 +26,8 @@ export function logDistraction(timestamp: number = Date.now()): void {
 
 /** Pure: map an in-app CompletedSession to the Firestore sessions/{id} payload
  *  (schema.md). Epoch-ms → Timestamp; distraction_count derived from the array;
- *  task.estMinutes → est_minutes. */
+ *  task.estMinutes → est_minutes. `completed` + `overrun_minutes` ship in the
+ *  mirror payload alongside the SQLite columns (M4.5 / M4.6 / L16). */
 export function toSessionDoc(s: CompletedSession) {
   return {
     id: s.id,
@@ -45,6 +46,8 @@ export function toSessionDoc(s: CompletedSession) {
     focus_score: s.focusScore,
     regime: s.plan.regime,
     client_version: s.clientVersion,
+    completed: s.completed,
+    overrun_minutes: s.overrunMinutes,
     ...(s.modelVersion ? { model_version: s.modelVersion } : {}),
   };
 }

@@ -27,6 +27,8 @@ interface SessionRow {
   model_version: string | null;
   started_at: number;
   ended_at: number;
+  completed: number; // M4.5: 1=DONE, 0=saved partial
+  overrun_minutes: number; // M4.6
 }
 
 function rowToSession(r: SessionRow, distractions: number[]): CompletedSession {
@@ -48,6 +50,8 @@ function rowToSession(r: SessionRow, distractions: number[]): CompletedSession {
     actualFocusMinutes: r.actual_focus_minutes,
     focusScore: r.focus_score,
     distractions,
+    completed: Boolean(r.completed),
+    overrunMinutes: r.overrun_minutes,
     clientVersion: r.client_version,
     ...(r.model_version ? { modelVersion: r.model_version } : {}),
   };
@@ -62,8 +66,9 @@ export function insertSession(s: CompletedSession): void {
       `INSERT OR REPLACE INTO sessions
         (id, task_id, task_title, task_difficulty, task_est_minutes,
          planned_focus_minutes, actual_focus_minutes, break_minutes, focus_score,
-         regime, client_version, model_version, started_at, ended_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         regime, client_version, model_version, started_at, ended_at,
+         completed, overrun_minutes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       s.id,
       s.taskId,
       s.task.title,
@@ -78,6 +83,8 @@ export function insertSession(s: CompletedSession): void {
       s.modelVersion ?? null,
       s.startedAt,
       s.endedAt,
+      s.completed ? 1 : 0,
+      s.overrunMinutes,
     );
     // Re-insert distractions cleanly on a replace.
     db.runSync('DELETE FROM distractions WHERE session_id = ?', s.id);
@@ -140,6 +147,17 @@ export function getAllSessionEndedAt(): number[] {
     'SELECT ended_at FROM sessions ORDER BY ended_at ASC',
   );
   return rows.map((r) => r.ended_at);
+}
+
+/** Most-recent session's `ended_at`, or null on an empty DB. Powers the M4.7
+ *  gap clock (`actualGap = now − lastEndedAt`) inside `computeSessionPlan`.
+ *  Same L16 invariant: DONE and saved partials both count; discarded never
+ *  wrote a row in the first place. */
+export function getLastSessionEndedAt(): number | null {
+  const row = getDb().getFirstSync<{ ended_at: number }>(
+    'SELECT ended_at FROM sessions ORDER BY ended_at DESC LIMIT 1',
+  );
+  return row?.ended_at ?? null;
 }
 
 /** Highest single-session focus_score in history, or null if there are no

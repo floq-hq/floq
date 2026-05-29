@@ -17,12 +17,21 @@ vi.mock('../../../stores/useTaskStore', () => ({
   useTaskStore: { getState: () => ({ tasks: store.tasks }) },
 }));
 
-// compute.ts now sources sessions_today from SQLite (M4.2). Mock the storage
-// barrel so the node env doesn't load expo-sqlite / firebase, and so we can
-// drive the count from the test.
-const sql = vi.hoisted(() => ({ sessionsToday: 0 }));
-vi.mock('../../storage', () => ({
+// compute.ts now sources sessions_today + the last-session ended_at +
+// the last session's break_minutes from SQLite (M4.2 / M4.5 / M4.7). Mock
+// the sessions module so the node env doesn't load expo-sqlite / firebase
+// and so we can drive each value from the test. Includes the M4.7 inputs
+// for the gap-clock / depletion path; default to "no prior session" so the
+// existing pre-M4.7 expectations (focus 51 etc.) round-trip unchanged.
+const sql = vi.hoisted(() => ({
+  sessionsToday: 0,
+  lastEndedAt: null as number | null,
+  recent: [] as Array<{ plan: { breakMinutes: number } }>,
+}));
+vi.mock('../../storage/sessions', () => ({
   countSessionsToday: vi.fn(() => sql.sessionsToday),
+  getLastSessionEndedAt: vi.fn(() => sql.lastEndedAt),
+  getRecentSessions: vi.fn((_n: number) => sql.recent),
 }));
 
 import { hourBucket, buildSessionInputs, computeSessionPlan } from '../compute';
@@ -103,16 +112,22 @@ describe('computeSessionPlan', () => {
     store.answers = answers;
     store.tasks = [makeTask()];
     sql.sessionsToday = 0;
+    sql.lastEndedAt = null;
+    sql.recent = [];
   });
 
   it('round-trips the timer.md worked example: hard task at preferred time → focus 51, break 11, cold', () => {
     // 60 × 1.0 (neutral) × 0.85 (difficulty 5) × 1.0 (morning match) × 1.0 (1st today) = 51
+    // No prior session → recovery_mod = 1.0, depletion_mod = 1.0 (no trim).
     const plan = computeSessionPlan('t1', { now: morning10 });
     expect(plan).toEqual({ focusMinutes: 51, breakMinutes: 11, regime: 'cold' });
   });
 
-  it('sources sessions_today from SQLite when ctx omits it (fatigue applies)', () => {
+  it('sources sessions_today from SQLite when ctx omits it (fatigue applies as depletion floor)', () => {
     sql.sessionsToday = 2; // 3rd session today → fatigue ×0.8
+    // Without a prior session inside the recovery window, recovery_mod = 1.0
+    // → depletion_mod = max(0.75, 0.8 × 1.0) = 0.8 (matches the old fatigue-
+    // only behavior for the first session of a recovery cycle).
     // 60 × 1.0 × 0.85 × 1.0 × 0.8 = 40.8 → floor 40; break floor(40 × 0.22) = 8
     const plan = computeSessionPlan('t1', { now: morning10 });
     expect(plan).toEqual({ focusMinutes: 40, breakMinutes: 8, regime: 'cold' });
@@ -123,6 +138,52 @@ describe('computeSessionPlan', () => {
     // ...but the caller pins it to the 1st → fatigue ×1.0 → focus 51
     const plan = computeSessionPlan('t1', { now: morning10, sessionsToday: 0 });
     expect(plan).toEqual({ focusMinutes: 51, breakMinutes: 11, regime: 'cold' });
+  });
+
+  it('M4.7: back-to-back with zero gap trims focus via depletion', () => {
+    // 2nd session today, started immediately after the prior one (gap=0,
+    // recovery_mod=0.85). fatigue=0.9 → product 0.765 (above the 0.75 floor,
+    // so the product wins). Pre-fatigue baseline = 51.
+    // 51 × 0.765 = 39.015 → floor 39; break floor(39 × 0.22) = floor(8.58) = 8.
+    sql.sessionsToday = 1;
+    sql.lastEndedAt = morning10; // gap = 0 minutes
+    sql.recent = [{ plan: { breakMinutes: 11 } }];
+    const plan = computeSessionPlan('t1', { now: morning10 });
+    expect(plan).toEqual({ focusMinutes: 39, breakMinutes: 8, regime: 'cold' });
+  });
+
+  it('M4.7: worst-corner depletion clips to DEPLETION_FLOOR (0.75)', () => {
+    // 3rd+ session today (fatigue=0.8), gap=0 (recovery_mod=0.85) →
+    // raw product 0.68, clipped to 0.75. Pre-fatigue baseline = 51.
+    // 51 × 0.75 = 38.25 → floor 38; break floor(38 × 0.22) = 8.
+    sql.sessionsToday = 2;
+    sql.lastEndedAt = morning10;
+    sql.recent = [{ plan: { breakMinutes: 11 } }];
+    const plan = computeSessionPlan('t1', { now: morning10 });
+    expect(plan).toEqual({ focusMinutes: 38, breakMinutes: 8, regime: 'cold' });
+  });
+
+  it('M4.7: rested fully (gap >= recommended break) yields no recovery penalty', () => {
+    sql.sessionsToday = 0; // back to fatigue 1.0 to isolate the recovery effect
+    sql.lastEndedAt = morning10 - 30 * 60_000; // gap = 30 min, well past any break
+    sql.recent = [{ plan: { breakMinutes: 11 } }];
+    // depletion_mod = max(0.75, 1.0 × 1.0) = 1.0 → no trim, focus = 51.
+    const plan = computeSessionPlan('t1', { now: morning10 });
+    expect(plan).toEqual({ focusMinutes: 51, breakMinutes: 11, regime: 'cold' });
+  });
+
+  it('M4.7: injected ctx.recoveryGapMin + recommendedBreakMin win over storage', () => {
+    sql.lastEndedAt = morning10 - 60 * 60_000; // storage says fully rested
+    sql.recent = [{ plan: { breakMinutes: 11 } }];
+    // Caller pins to gap=0 (just restarted) → recovery_mod = 0.85.
+    // fatigue = 1.0 → depletion = max(0.75, 0.85) = 0.85.
+    // 60 × 1.0 × 0.85 × 1.0 × 0.85 = 43.35 → floor 43; break floor(43 × 0.22) = 9.
+    const plan = computeSessionPlan('t1', {
+      now: morning10,
+      recoveryGapMin: 0,
+      recommendedBreakMin: 11,
+    });
+    expect(plan).toEqual({ focusMinutes: 43, breakMinutes: 9, regime: 'cold' });
   });
 
   it('throws when the task id is unknown', () => {
