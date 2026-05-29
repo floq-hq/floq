@@ -1,15 +1,17 @@
 /**
  * Dev kitchen-sink, ported from the pre-router App.tsx. Reachable at /dev in a
  * dev build (not linked from the app UI). Flips between the S1.3 UI primitives
- * preview and the M1.3 TFLite spike without either clobbering the other. Theme
- * is provided by the root layout, so this no longer wraps its own ThemeProvider.
+ * preview, the M1.3 TFLite spike, and the S5.2 forecast-state mock without any
+ * clobbering the others. Theme is provided by the root layout, so this no longer
+ * wraps its own ThemeProvider.
  */
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ComponentsPreview } from '../components/dev/ComponentsPreview';
 import { TFLiteSpike } from '../components/dev/TFLiteSpike';
+import { ForecastStatesPanel } from '../components/dev/ForecastStatesPanel';
 
-type Harness = 'ui' | 'tflite';
+type Harness = 'ui' | 'tflite' | 'forecast';
 
 export default function DevHarness() {
   const [harness, setHarness] = useState<Harness>('ui');
@@ -18,9 +20,12 @@ export default function DevHarness() {
       <View style={styles.switcher}>
         <DevTab label="UI primitives" active={harness === 'ui'} onPress={() => setHarness('ui')} />
         <DevTab label="TFLite spike" active={harness === 'tflite'} onPress={() => setHarness('tflite')} />
+        <DevTab label="Forecast" active={harness === 'forecast'} onPress={() => setHarness('forecast')} />
       </View>
       <View style={styles.body}>
-        {harness === 'ui' ? <ComponentsPreview /> : <TFLiteSpike />}
+        {harness === 'ui' && <ComponentsPreview />}
+        {harness === 'tflite' && <TFLiteSpike />}
+        {harness === 'forecast' && <ForecastStatesPanel />}
       </View>
     </View>
   );
