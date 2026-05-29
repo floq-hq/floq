@@ -19,8 +19,15 @@ function validateTasks(text: string): ParsedTask[] | null {
   } catch {
     return null;
   }
-  // Accept a bare array or the documented { tasks: [...] } wrapper.
-  const arr = Array.isArray(json) ? json : (json as { tasks?: unknown }).tasks;
+  // Accept a bare array or the documented { tasks: [...] } wrapper. Guard the
+  // property access: a provider returning literal `null` (or any non-object)
+  // must not throw here — it has to flow through safeParse to a null result so
+  // the UI falls back to manual entry (never let a bad response crash the path).
+  const arr = Array.isArray(json)
+    ? json
+    : json && typeof json === 'object'
+      ? (json as { tasks?: unknown }).tasks
+      : null;
   const result = ParsedTasksSchema.safeParse(arr);
   return result.success ? result.data : null;
 }
