@@ -1,10 +1,11 @@
 /**
  * Stats (S4.1) — historical only. The forecast graph is W6 (S6.1).
  *
- * Layout: hero weekly focus score → three summary cards (streak, personal
- * best, distractions/hr) → forecast section (regime-gated: shows the cold
- * "still learning your rhythm" badge while < 7 sessions, hidden otherwise
- * until the real forecast lands) → recent sessions list.
+ * Layout: hero weekly focus score → summary cards (current streak,
+ * distractions/hr — the "now" glance) → Personal best section (all-time:
+ * highest score, longest streak, best session — S5.1) → forecast section
+ * (regime-gated: shows the cold "still learning your rhythm" badge while < 7
+ * sessions, hidden otherwise until the real forecast lands) → recent sessions.
  *
  * Pull-to-refresh invalidates all M4.3 stats queries; the same invalidation
  * fires automatically from app/focus.tsx onDone, so a freshly-completed
@@ -21,6 +22,7 @@ import { Text } from '../../components/ui';
 import { OfflineIndicator } from '../../components/OfflineIndicator';
 import { HeroScore } from '../../components/stats/HeroScore';
 import { SummaryCards } from '../../components/stats/SummaryCards';
+import { PersonalBest } from '../../components/stats/PersonalBest';
 import { SessionList } from '../../components/stats/SessionList';
 import { getAllSessionEndedAt } from '../../services/storage/sessions';
 import { statsKeys } from '../../services/stats/useStats';
@@ -85,6 +87,8 @@ export default function StatsTab() {
       <HeroScore />
 
       <SummaryCards />
+
+      <PersonalBest />
 
       {forecastLocked && (
         <View style={[styles.forecast, { borderColor: theme.border }]}>

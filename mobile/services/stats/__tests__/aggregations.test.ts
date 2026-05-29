@@ -4,6 +4,7 @@ import type { CompletedSession } from '../../session/types';
 import {
   currentStreak,
   distractionRate,
+  longestStreak,
   personalBest,
   weeklyFocusScore,
   weekStartMs,
@@ -121,6 +122,45 @@ describe('currentStreak', () => {
     const dayBefore = TODAY_MID - 2 * DAY_MS + 10 * 60 * 60 * 1000;
     expect(currentStreak([today, yesterday, dayBefore], NOON)).toBe(3);
     expect(currentStreak([dayBefore, today, yesterday], NOON)).toBe(3);
+  });
+});
+
+describe('longestStreak', () => {
+  it('returns 0 for no sessions', () => {
+    expect(longestStreak([])).toBe(0);
+  });
+
+  it('counts 1 for a single day', () => {
+    expect(longestStreak([TODAY_MID + 9 * 60 * 60 * 1000])).toBe(1);
+  });
+
+  it('multiple sessions on the same day count once', () => {
+    const t1 = TODAY_MID + 9 * 60 * 60 * 1000;
+    const t2 = TODAY_MID + 14 * 60 * 60 * 1000;
+    expect(longestStreak([t1, t2])).toBe(1);
+  });
+
+  it('counts a fully consecutive run', () => {
+    const days = [0, 1, 2, 3].map((d) => TODAY_MID - d * DAY_MS + 10 * 60 * 60 * 1000);
+    expect(longestStreak(days)).toBe(4);
+  });
+
+  it('returns the longest run, not the most recent', () => {
+    // A 4-day run (days 9–6 ago), a gap, then a 2-day run (days 1–0 ago).
+    const oldRun = [9, 8, 7, 6].map((d) => TODAY_MID - d * DAY_MS + 10 * 60 * 60 * 1000);
+    const recentRun = [1, 0].map((d) => TODAY_MID - d * DAY_MS + 10 * 60 * 60 * 1000);
+    expect(longestStreak([...oldRun, ...recentRun])).toBe(4);
+  });
+
+  it('does not bridge a gap', () => {
+    // days 0,1 then gap on 2, then 3 → two runs of 2 and 1; longest is 2.
+    const days = [0, 1, 3].map((d) => TODAY_MID - d * DAY_MS + 10 * 60 * 60 * 1000);
+    expect(longestStreak(days)).toBe(2);
+  });
+
+  it('input order does not matter', () => {
+    const days = [2, 0, 1].map((d) => TODAY_MID - d * DAY_MS + 10 * 60 * 60 * 1000);
+    expect(longestStreak(days)).toBe(3);
   });
 });
 

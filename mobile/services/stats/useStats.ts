@@ -15,9 +15,11 @@
 
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 
+import type { CompletedSession } from '../session/types';
 import { forecastNext7Days, type Forecast } from '../ml/forecast';
 import {
   getAllSessionEndedAt,
+  getBestSession,
   getFocusScoreSeries,
   getMaxFocusScore,
   getSessionsSince,
@@ -25,6 +27,7 @@ import {
 import {
   currentStreak,
   distractionRate,
+  longestStreak,
   personalBest,
   weeklyFocusScore,
   weekStartMs,
@@ -34,8 +37,10 @@ export const statsKeys = {
   all: ['stats'] as const,
   weekly: ['stats', 'weekly'] as const,
   streak: ['stats', 'streak'] as const,
+  longestStreak: ['stats', 'longestStreak'] as const,
   distractionRate: ['stats', 'distractionRate'] as const,
   personalBest: ['stats', 'personalBest'] as const,
+  bestSession: ['stats', 'bestSession'] as const,
   forecast: ['stats', 'forecast'] as const,
 };
 
@@ -68,10 +73,26 @@ export function useDistractionRate(): UseQueryResult<number | null> {
   });
 }
 
+export function useLongestStreak(): UseQueryResult<number> {
+  return useQuery({
+    queryKey: statsKeys.longestStreak,
+    queryFn: () => longestStreak(getAllSessionEndedAt()),
+  });
+}
+
 export function usePersonalBest(): UseQueryResult<number | null> {
   return useQuery({
     queryKey: statsKeys.personalBest,
     queryFn: () => personalBest(getMaxFocusScore()),
+  });
+}
+
+/** The all-time best session (highest focus score) — for the S5.1 Personal-best
+ *  view's "best session" line. `null` until the user has any session. */
+export function useBestSession(): UseQueryResult<CompletedSession | null> {
+  return useQuery({
+    queryKey: statsKeys.bestSession,
+    queryFn: () => getBestSession(),
   });
 }
 
