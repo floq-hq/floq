@@ -36,7 +36,7 @@ type ParsedRow = ParsedTask & { id: string };
 function noticeFor(reason: ParseFailReason): string {
   switch (reason) {
     case 'rate_limited':
-      return 'We’re a bit busy right now — add a task manually for the moment.';
+      return 'Hit the daily organize limit — add a task manually, or try again in an hour.';
     case 'parse_failed':
       return 'Couldn’t read that into tasks — add one manually.';
     case 'unavailable':

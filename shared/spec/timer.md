@@ -62,6 +62,18 @@ break = clamp(break, 5, 25);
 - `60 × 1.0 × 0.85 × 1.0 × 1.0 = 51.0`
 - Recommendation: focus = 51, break = 11
 
+## Recovery break recompute (L16) + sub-5-min skip (L21)
+
+At DONE the recovery break is recomputed from **actual** focus minutes (M4.6). Standard formula:
+
+```ts
+break = clamp(round(actualFocusMinutes × 0.22), 5, 25)
+```
+
+**L21 (PR5):** if `actualFocusMinutes < MIN_FOCUS_FOR_RECOVERY` (= 5), `break = 0` — no recovery recommended at all. The summary screen routes the user straight to Home; the recovery screen is never shown. Rationale: the 5-min break floor was calibrated for real focus (≥ 15 min); below ~5 min the user expended too little cognitive resource to need a structured break. See `decisions.md` L21.
+
+The frozen formula constants (0.22, 5, 25) are unchanged; the threshold is an orchestration-layer gate in `services/session/overrun.ts`, NOT inside `coldStart.ts`.
+
 ## Task-estimate cap (L20)
 
 The cold-start formula recommends **focus capacity**, not task duration. A 25-min task can still produce a 72-min recommendation if the user's base_focus is high — leaving them with ~50 min of overrun and no actual work to do. The orchestration layer (`services/session/compute.ts`, not `coldStart.ts`) caps the focus recommendation at:

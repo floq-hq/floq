@@ -136,7 +136,10 @@ export default function Home() {
 const styles = StyleSheet.create({
   root: { flex: 1, paddingHorizontal: 24 },
   header: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  // PR5 (audit Finding #13): tightened gap so OfflineIndicator + ⚙ + StreakCounter
+  // don't overflow on smaller devices (iPhone SE). flexShrink lets the children
+  // collapse gracefully if the offline pill is wider than the spare width.
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 12, flexShrink: 1 },
   body: { flex: 1, justifyContent: 'center' },
   taskBlock: { gap: 12 },
   pills: { flexDirection: 'row', gap: 8, marginTop: 12 },

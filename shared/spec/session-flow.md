@@ -89,14 +89,20 @@ Tap-anywhere routes to recovery; otherwise the 8-second auto-route fires.
 
 ## Recovery screen
 
-A dedicated full-screen route reached automatically from the summary. Clean by design — one number, the task-done decision when applicable, two CTAs:
+A dedicated full-screen route reached automatically from the summary, **unless the session was too short to need recovery** — see "When recovery is skipped" below.
+
+Clean by design — one number, the task-done decision when applicable, two CTAs:
 
 - **Live countdown** (`MM:SS`) from the recomputed `break_minutes` (M4.6). Reanimated tick off the JS thread (same pattern as `SessionTimer`); React state only flips at the boundary, not per second.
 - **Mark task done** affordance (Option 7 / L19) — only shown when the just-finished task is still in the queue. Single tap removes the task; auto-promotes the next one. The recovery screen is where this decision belongs because (a) the user is cooling down and has perspective, and (b) the dwell time of the countdown (5–25 min recommended) is generous, unlike the 8-second summary glance.
-- **Start next session** — secondary CTA before the countdown completes, primary after (a calm emphasis flip, no animation). Cancels the pending end-of-break notification and routes to `/focus`.
+- **Start next session** — secondary CTA before the countdown completes, primary after (a calm emphasis flip, no animation). Cancels the pending end-of-break notification and routes to `/focus`. When the queue is empty, this CTA is replaced by a calm caption explaining the queue is empty.
 - **Skip recovery** — ghost CTA. Cancels the notification, routes to Home. Under-resting trims the next session's recommendation via `recovery_mod` (L17) — never blocked, never docked.
 
 Tap-anywhere does NOT dismiss the recovery screen — this is deliberate dwell. When the countdown reaches `00:00`, the Start CTA's emphasis flips but the screen does not auto-dismiss; the notification fires.
+
+### When recovery is skipped (L21)
+
+If `actualFocusMinutes < 5` (the `MIN_FOCUS_FOR_RECOVERY` threshold), the recovery screen is skipped entirely — the summary's auto-route lands on Home instead. The 5-min break floor was calibrated for real focus (≥15 min); below ~5 min the user expended too little cognitive resource to need a structured break. See `decisions.md` L21.
 
 ## Focus partnership (per `decisions.md` L18 — Phase A)
 

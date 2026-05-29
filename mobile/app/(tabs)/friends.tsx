@@ -22,7 +22,7 @@ export default function FriendsTab() {
     <View style={[styles.root, { backgroundColor: theme.bg, paddingTop: insets.top + 56 }]}>
       <Text variant="title">Friends</Text>
       <Text variant="body" color={theme.textMuted} style={styles.copy}>
-        Your focus partner lands in W7. Solo is fully available today — nothing
+        Your focus partner lands soon. Solo is fully available today — nothing
         here blocks the rest of the app.
       </Text>
     </View>

@@ -48,8 +48,19 @@ export function SessionList() {
 }
 
 function SessionRow({ theme, session }: { theme: Theme; session: CompletedSession }) {
+  // PR5 (audit Finding #10): a negative focus score gets a softer color
+  // signal so it doesn't read as a flat number. The score itself is correct
+  // (M4.1 formula allows negatives — see focusScore.ts), but a plain "-19"
+  // with no visual context lands harsh, especially on a new user's first
+  // Stats screen.
+  const score = Math.round(session.focusScore);
+  const scoreColor = score < 0 ? theme.danger : theme.textMuted;
   return (
-    <View style={[styles.row, { borderBottomColor: theme.border }]}>
+    <View
+      style={[styles.row, { borderBottomColor: theme.border }]}
+      accessibilityRole="summary"
+      accessibilityLabel={`${session.task.title}, ${session.actualFocusMinutes} minutes, focus score ${score}`}
+    >
       <View style={styles.titleCol}>
         <Text variant="bodyMedium" numberOfLines={1}>
           {session.task.title}
@@ -58,8 +69,8 @@ function SessionRow({ theme, session }: { theme: Theme; session: CompletedSessio
           {`${session.actualFocusMinutes}m · ${formatRelative(session.endedAt, Date.now())}`}
         </Text>
       </View>
-      <Text variant="bodyMedium" color={theme.textMuted}>
-        {Math.round(session.focusScore)}
+      <Text variant="bodyMedium" color={scoreColor}>
+        {score}
       </Text>
     </View>
   );

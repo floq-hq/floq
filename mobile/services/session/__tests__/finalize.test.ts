@@ -78,3 +78,24 @@ describe('finalizeOnAbandon', () => {
     );
   });
 });
+
+// L21 — skipping recovery on sub-5-min DONEs (PR5).
+describe('finalizeOnDone — sub-5-min recovery skip (L21)', () => {
+  it('stores breakMinutes = 0 for a 3-min DONE (no recovery recommended)', () => {
+    const endedAt = 1_000_000 + 3 * 60_000;
+    const out = finalizeOnDone(makeActive(), endedAt, '1.0.0');
+    expect(out.actualFocusMinutes).toBe(3);
+    expect(out.plan.breakMinutes).toBe(0);
+    // Focus score is still computed honestly — 3 min × difficulty 4 / 3 = 4.
+    expect(out.focusScore).toBe(
+      computeFocusScore({ sessionMinutes: 3, distractionCount: 0, difficulty: 4 }),
+    );
+  });
+
+  it('stores breakMinutes = 5 (BREAK_MIN) at the threshold boundary (5 min)', () => {
+    const endedAt = 1_000_000 + 5 * 60_000;
+    const out = finalizeOnDone(makeActive(), endedAt, '1.0.0');
+    expect(out.actualFocusMinutes).toBe(5);
+    expect(out.plan.breakMinutes).toBe(5);
+  });
+});

@@ -208,7 +208,19 @@ export default function RecoveryScreen() {
             variant={done ? 'primary' : 'secondary'}
             onPress={onStartNext}
           />
-        ) : null}
+        ) : (
+          // PR5 (audit Finding #12): the queue went empty (either was empty
+          // when DONE happened, or the user just marked the last task done
+          // above). Without this caption "Start next session" silently
+          // disappears with no explanation — confusing dead-end.
+          <Text
+            variant="caption"
+            color={theme.textMuted}
+            style={styles.emptyQueue}
+          >
+            Queue empty — brain-dump from Home when you're ready.
+          </Text>
+        )}
         <Button label="Skip recovery" variant="ghost" size="md" onPress={onSkip} />
       </View>
     </View>
@@ -227,4 +239,5 @@ const styles = StyleSheet.create({
   },
   taskTitle: { textAlign: 'center' },
   actions: { gap: 8 },
+  emptyQueue: { textAlign: 'center', paddingVertical: 8 },
 });

@@ -54,10 +54,17 @@ export default function SessionSummary() {
   const taskTitle = typeof params.taskTitle === 'string' ? params.taskTitle : '';
   const streak = useCurrentStreak().data ?? 0;
 
-  // Route to /recovery. The task identity is forwarded so the recovery
-  // screen can host the Mark-task-done affordance (L19) — that's the
-  // surface with enough dwell time to make the decision unhurried.
-  const routeToRecovery = useCallback(() => {
+  // Route to /recovery — UNLESS the recomputed break is 0 (L21: the user
+  // focused too little to need recovery). In that case skip recovery and
+  // go straight Home; reuses the PR4 #6 sentinel + the existing /recovery
+  // bail. The task identity is forwarded so the recovery screen can host
+  // the Mark-task-done affordance (L19) — that's the surface with enough
+  // dwell time to make the decision unhurried.
+  const routeNext = useCallback(() => {
+    if (breakMinutes <= 0) {
+      router.replace('/home');
+      return;
+    }
     router.replace({
       pathname: '/recovery',
       params: {
@@ -67,16 +74,16 @@ export default function SessionSummary() {
     });
   }, [breakMinutes, taskId, taskTitle]);
 
-  // Auto-route to /recovery after 8s; tap-anywhere does the same. The recovery
-  // screen is the dwell space; this summary is a glance.
+  // Auto-route after 8s; tap-anywhere does the same. The recovery screen is
+  // the dwell space; this summary is a glance.
   useEffect(() => {
-    const t = setTimeout(routeToRecovery, AUTO_ROUTE_MS);
+    const t = setTimeout(routeNext, AUTO_ROUTE_MS);
     return () => clearTimeout(t);
-  }, [routeToRecovery]);
+  }, [routeNext]);
 
   return (
     <Pressable
-      onPress={routeToRecovery}
+      onPress={routeNext}
       style={[
         styles.root,
         { backgroundColor: theme.bg, paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 },

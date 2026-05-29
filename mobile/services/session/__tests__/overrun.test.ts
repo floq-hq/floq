@@ -7,7 +7,7 @@
 // to prevent.
 
 import { describe, it, expect } from 'vitest';
-import { overrunMinutes, recoveryBreakMinutes } from '../overrun';
+import { MIN_FOCUS_FOR_RECOVERY, overrunMinutes, recoveryBreakMinutes } from '../overrun';
 import {
   BREAK_MAX,
   BREAK_MIN,
@@ -44,9 +44,21 @@ describe('recoveryBreakMinutes', () => {
     expect(recoveryBreakMinutes(planned)).toBe(expected);
   });
 
-  it('clamps to BREAK_MIN at very short focus', () => {
-    expect(recoveryBreakMinutes(0)).toBe(BREAK_MIN);
+  it('returns 0 below MIN_FOCUS_FOR_RECOVERY (L21 — no recovery for trivial sessions)', () => {
+    // Below the threshold: no recovery recommended at all. The 5-min break
+    // floor was calibrated for real focus (≥15 min). A 3-min session doesn't
+    // earn a 5-min mandated break.
+    expect(recoveryBreakMinutes(0)).toBe(0);
+    expect(recoveryBreakMinutes(3)).toBe(0);
+    expect(recoveryBreakMinutes(MIN_FOCUS_FOR_RECOVERY - 1)).toBe(0);
+  });
+
+  it('clamps to BREAK_MIN once at/above the threshold', () => {
+    // At the threshold and above: the cold-start floor takes over. A 5-min
+    // session gets a 5-min break (the minimum useful recovery).
+    expect(recoveryBreakMinutes(MIN_FOCUS_FOR_RECOVERY)).toBe(BREAK_MIN);
     expect(recoveryBreakMinutes(10)).toBe(BREAK_MIN); // round(2.2) = 2 → clamps to 5
+    expect(recoveryBreakMinutes(20)).toBe(BREAK_MIN); // round(4.4) = 4 → clamps to 5
   });
 
   it('clamps to BREAK_MAX at very long focus', () => {

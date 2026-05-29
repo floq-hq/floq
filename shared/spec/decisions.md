@@ -318,6 +318,34 @@ The DONE-vs-end-early distinction is the user's **intent**, not the elapsed time
 
 **Implementation:** PR3. `mobile/services/session/compute.ts` adds `export const TASK_ESTIMATE_BUFFER = 1.5` + the cap step. The dev-mode `console.log` shows `taskCap` + `capBites` so the cap is observable. Tests cover: short task caps, long task doesn't cap, the FOCUS_MIN floor wins below 10 estimated minutes, the buffer constant doesn't silently drift.
 
+### L21 — Skip recovery for sub-5-min DONEs
+
+**Date locked:** 2026-05-29
+**Decision:** When `actualFocusMinutes < MIN_FOCUS_FOR_RECOVERY` (= **5**), `recoveryBreakMinutes` returns **0** instead of clamping to BREAK_MIN. The session-summary screen reads 0 as "skip recovery" and routes the user straight to Home (reusing the PR4 #6 `breakMinutes <= 0` bail in `/recovery`).
+
+**`MIN_FOCUS_FOR_RECOVERY = 5`** — calibrated, not frozen. Lives in `services/session/overrun.ts` (the orchestration layer), NOT inside `coldStart.ts`. The frozen 5/25 break clamps are unchanged.
+
+**Why (the gap this closes):** the cold-start break formula `clamp(round(actual × 0.22), 5, 25)` was designed assuming the user actually did real focus work (`actualFocusMinutes ≥ FOCUS_MIN = 15`). Below that, the 5-min lower clamp dominates the proportional logic: a 3-min DONE earned the same 5-min mandated break as a 22-min DONE. That's a 167% break ratio for the 3-min case — break larger than the focus itself — and the recovery screen would dwell on a 5-min countdown for a user who barely worked. By the science the 5-min floor is "minimum useful cognitive recovery" — but cognitive recovery only matters if the user expended cognitive resources, which a 3-min session didn't.
+
+**Decision matrix considered:**
+- (a) Skip recovery for `actual < 5` → no break. **Chosen.**
+- (b) Skip for `actual < 10` → tighter cutoff; rejected as too aggressive (10-min focus is light but legitimate).
+- (c) Skip for `actual < FOCUS_MIN (15)` → matches the science floor exactly but rejected as too loud (a 12-min focus shouldn't read as "didn't count").
+- (d) Make BREAK_MIN dynamic → changes the frozen formula, rejected.
+- (e) Keep current behavior + add an explainer caption → kept the 5-min mandated break, which is the UX symptom we're solving.
+
+5 min was picked because (a) it matches BREAK_MIN itself (you can't have a break shorter than the floor anyway), and (b) below 5 min of focus the user clearly aborted or did a trivial task — no real recovery needed.
+
+**Mechanics:** `recoveryBreakMinutes(actual)` returns 0 when `actual < 5`, otherwise the L16 formula. The 0 sentinel propagates:
+- `finalizeOnDone` stores it in `plan.breakMinutes` on the SQLite row (and Firestore mirror).
+- `session-summary` checks `breakMinutes <= 0` and routes to `/home` instead of `/recovery`.
+- `/recovery` keeps its own `breakMinutes <= 0` bail (PR4 #6) as defense in depth.
+- M4.7 `recoveryMod` reads `prevBreak = 0` for the next session → returns 1.0 (no penalty), correctly: there was no break to skip because no break was recommended.
+
+**Why NOT inside `coldStart.ts`:** the safety rule freezes the formula + constants. The threshold is a separate gate; same pattern as L17's `recovery_mod` and L20's task-estimate cap — orchestration-layer constraints applied OUTSIDE the frozen formula.
+
+**Implementation:** PR5. `mobile/services/session/overrun.ts` adds `export const MIN_FOCUS_FOR_RECOVERY = 5` + the bail. `mobile/app/session-summary.tsx` adds the early-route-to-home on `breakMinutes <= 0`. Tests cover: 0/3/4 min → 0 break; 5/10/20 min → BREAK_MIN floor still wins; `finalizeOnDone` round-trips both branches.
+
 ---
 
 ## Open decisions — must resolve by end of W1
