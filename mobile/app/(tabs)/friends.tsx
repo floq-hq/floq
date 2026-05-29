@@ -1,6 +1,14 @@
 /**
- * Friends tab — PLACEHOLDER. The opt-in leaderboard and async session feed come
- * later. Here so the tab bar is complete.
+ * Friends tab — PLACEHOLDER, awaiting S7.0 (W7).
+ *
+ * Per decisions.md L18 (social-as-core) this tab becomes the **Partner** tab
+ * with a 1:1 focus-partnership UX — invite affordance, partner's scheduled +
+ * completed sessions, gentle pair streak, and the activation funnel that's
+ * the make-or-break of the pivot. The rename + the real UI both land with
+ * S7.0 (mobile/CLAUDE.md: "Rename the 'Friends' tab to 'Partner' when wiring
+ * S7.0"). For now: an L18-aligned placeholder that doesn't promise a
+ * leaderboard / friend-list (both dead per L18) and reassures solo is fully
+ * available today (no dead-end).
  */
 import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,7 +22,8 @@ export default function FriendsTab() {
     <View style={[styles.root, { backgroundColor: theme.bg, paddingTop: insets.top + 56 }]}>
       <Text variant="title">Friends</Text>
       <Text variant="body" color={theme.textMuted} style={styles.copy}>
-        Your friends-only leaderboard and session feed land later.
+        Your focus partner lands in W7. Solo is fully available today — nothing
+        here blocks the rest of the app.
       </Text>
     </View>
   );
