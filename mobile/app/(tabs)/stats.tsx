@@ -11,6 +11,9 @@
  * fires automatically from app/focus.tsx onDone, so a freshly-completed
  * session reflects on tab-switch back without the pull.
  *
+ * S6.0: tapping a Recent row opens that session's shareable card — the
+ * "share anytime" surface (any past session, not just the session-end flow).
+ *
  * Sign-out relocated to app/settings.tsx (the stats stub's own note flagged
  * it as a temporary tenant of this screen).
  */
@@ -25,14 +28,28 @@ import { SummaryCards } from '../../components/stats/SummaryCards';
 import { PersonalBest } from '../../components/stats/PersonalBest';
 import { ForecastSection } from '../../components/stats/ForecastSection';
 import { SessionList } from '../../components/stats/SessionList';
+import { SessionCardModal } from '../../components/session/SessionCardModal';
+import type { SessionCardData } from '../../services/share/sessionInsight';
+import type { CompletedSession } from '../../services/session/types';
 import { statsKeys } from '../../services/stats/useStats';
 import { useTheme } from '../../theme';
+
+/** Project a stored session onto the card's minimal shape — no task title. */
+function toCardData(s: CompletedSession): SessionCardData {
+  return {
+    focusScore: s.focusScore,
+    focusMinutes: s.actualFocusMinutes,
+    distractionCount: s.distractions.length,
+    startedAt: s.startedAt,
+  };
+}
 
 export default function StatsTab() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
+  const [shareCard, setShareCard] = useState<SessionCardData | null>(null);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -69,10 +86,15 @@ export default function StatsTab() {
 
       <ForecastSection />
 
-      <Text variant="heading" style={styles.section}>
-        Recent
-      </Text>
-      <SessionList />
+      <View style={[styles.headerRow, styles.section]}>
+        <Text variant="heading">Recent</Text>
+        <Text variant="caption" color={theme.textMuted}>
+          Tap to share ↗
+        </Text>
+      </View>
+      <SessionList onSelectSession={(s) => setShareCard(toCardData(s))} />
+
+      <SessionCardModal data={shareCard} onClose={() => setShareCard(null)} />
     </ScrollView>
   );
 }
