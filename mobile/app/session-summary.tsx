@@ -1,21 +1,21 @@
 /**
- * Session-end summary (S3.3). A brief, calm recap shown after DONE — minutes
- * focused, distractions, focus score, streak, and the enforced recovery break
- * (session-flow.md §Session-end summary). Anti-gamified per the design system:
- * no celebration, no confetti — restrained typography.
+ * Session-end summary (S3.3 + M4.9). A brief, calm recap shown after DONE —
+ * minutes focused, distractions, focus score, streak, the recomputed recovery
+ * break (M4.6), a one-line trade-off note, and an explicit "Skip recovery" CTA
+ * (recovery is RECOMMENDED + skippable per L17 — Start is never blocked).
+ * Anti-gamified per the design system: no celebration, no confetti.
  *
- * The DONE handler (session.tsx) already ended the session, wrote the record, and
- * promoted the next task; this screen only displays the result it was handed via
- * route params. Auto-dismisses to the recovery state (Home) after 8s or on tap.
- *
- * Focus score shows "—" until M4.1 (the frozen focus-score formula) lands; the
- * streak stays at its current store value until M4.4 wires session-derived updates.
+ * The DONE handler (focus.tsx) already ended the session, wrote the record via
+ * finalizeOnDone (M4.6), and promoted the next task; this screen only displays
+ * the result it was handed via route params. Auto-dismisses to Home after 8s
+ * or on tap or via the explicit Skip CTA — all three land in the same place.
+ * The focus score is M4.1 (real number; no longer the "—" placeholder).
  */
 import { useCallback, useEffect } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Text } from '../components/ui';
+import { Button, Text } from '../components/ui';
 import { useUserStore } from '../stores/useUserStore';
 import { useTheme } from '../theme';
 
@@ -85,15 +85,31 @@ export default function SessionSummary() {
 
         <View style={[styles.recovery, { borderColor: theme.border }]}>
           <Text variant="bodyMedium">{`Recovery · ${breakMinutes} min`}</Text>
-          <Text variant="caption" color={theme.textMuted}>
-            before your next session
+          <Text variant="caption" color={theme.textMuted} style={styles.recoveryCaption}>
+            recommended break
+          </Text>
+          {/* M4.9 / L17: the one-line trade-off note. Start is never blocked —
+              under-resting just trims the next session's recommendation via
+              recovery_mod. No nag, no enforcement. */}
+          <Text variant="caption" color={theme.textMuted} style={styles.recoveryNote}>
+            Starting before your break ends trims your next session.
           </Text>
         </View>
       </View>
 
-      <Text variant="caption" color={theme.textMuted}>
-        Tap to continue
-      </Text>
+      {/* L17: skip is one tap; the auto-dismiss + tap-to-continue reach the
+          same place, but the explicit label makes the choice visible. */}
+      <View style={styles.footer}>
+        <Button
+          label="Skip recovery"
+          variant="ghost"
+          size="md"
+          onPress={dismiss}
+        />
+        <Text variant="caption" color={theme.textMuted}>
+          Tap anywhere to continue
+        </Text>
+      </View>
     </Pressable>
   );
 }
@@ -113,4 +129,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 24,
   },
+  recoveryCaption: {},
+  recoveryNote: { marginTop: 6, textAlign: 'center' },
+  footer: { alignItems: 'center', gap: 4 },
 });

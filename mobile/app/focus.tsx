@@ -40,6 +40,8 @@ import { PhaseIndicator } from '../components/session/PhaseIndicator';
 import { SessionTimer } from '../components/session/SessionTimer';
 import { DistractionButton } from '../components/session/DistractionButton';
 import { SessionToast } from '../components/session/SessionToast';
+import { SuggestedStopMeter } from '../components/session/SuggestedStopMeter';
+import { EndEarlySheet } from '../components/session/EndEarlySheet';
 import { phaseFor, type Phase, type SessionPlan } from '../services/timer';
 import { saveCompletedSession } from '../services/storage/sessions';
 import { finalizeOnDone } from '../services/session/finalize';
@@ -96,6 +98,10 @@ export default function SessionScreen() {
   // second background episode re-triggers the toast even if the wording matches.
   const [bgNotice, setBgNotice] = useState<{ text: string; key: number } | null>(null);
   const dismissNotice = useCallback(() => setBgNotice(null), []);
+
+  // End-early sheet (M4.8). Opened by the understated "End early" affordance
+  // alongside DONE — kept visually subordinate so it never reads as DONE.
+  const [endEarlyOpen, setEndEarlyOpen] = useState(false);
 
   // Advance the clock on the UI thread (no per-second setState). Derived purely
   // from the wall clock and the session's startedAt, so it's a stable function of
@@ -226,12 +232,31 @@ export default function SessionScreen() {
             {task.title}
           </Text>
         ) : null}
+        {/* M4.9 / L16: suggested-stop progress + overrun affordance. NOT a phase
+            pill flip — phases.ts stays "Flow" past the suggestion (frozen). */}
+        <SuggestedStopMeter
+          elapsedSeconds={elapsedSeconds}
+          plannedFocusMinutes={plan.focusMinutes}
+        />
       </View>
 
       <View style={styles.controls}>
         <DistractionButton />
         <Button label="DONE" onPress={onDone} />
+        {/* M4.8 / L16: understated end-early — visually subordinate to DONE,
+            never reads as the success path. Opens the Save/Discard sheet. */}
+        <Button
+          label="End early"
+          variant="ghost"
+          size="md"
+          onPress={() => setEndEarlyOpen(true)}
+        />
       </View>
+
+      <EndEarlySheet
+        visible={endEarlyOpen}
+        onDismiss={() => setEndEarlyOpen(false)}
+      />
 
       <SessionToast
         message={bgNotice?.text ?? null}

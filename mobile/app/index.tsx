@@ -6,8 +6,14 @@
  *
  * Auth state and the onboarding seed both load async, so we hold on a
  * splash-colored view until both are known, then redirect exactly once.
+ *
+ * M4.8 (L16): if a session was killed mid-flight, the MMKV mirror holds the
+ * in-flight ActiveSession. Before any redirect, we surface the
+ * RestoreSessionPrompt (Resume / Save / Discard) — the gate intercepts the
+ * dangling session ahead of Home/onboarding/auth so a kill never silently
+ * eats the session.
  */
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { Redirect } from 'expo-router';
 import { resolveStartRoute, useCurrentUser } from '../services/firebase';
@@ -15,6 +21,9 @@ import { scheduleSessionStartReminder } from '../services/notifications';
 import { useOnboardingStore } from '../stores/useOnboardingStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import type { OnboardingAnswers } from '../services/onboarding';
+import { getRestorableSession } from '../services/session/restore';
+import type { ActiveSession } from '../services/session/types';
+import { RestoreSessionPrompt } from '../components/session/RestoreSessionPrompt';
 import { useTheme } from '../theme';
 
 /**
@@ -40,6 +49,12 @@ export default function Index() {
   const hydrate = useOnboardingStore((s) => s.hydrate);
   const settingsHydrated = useSettingsStore((s) => s.hydrated);
   const hydrateSettings = useSettingsStore((s) => s.hydrate);
+  // M4.8: snapshot any dangling session at mount. Reads MMKV directly (safe
+  // pre-hydration). null = nothing to restore; resolved = user picked an
+  // action via the prompt and we should now fall through to the redirect.
+  const [restorable, setRestorable] = useState<ActiveSession | null>(() =>
+    getRestorableSession(),
+  );
 
   // Load the seed once we know who's signed in (gates onboarding vs home).
   useEffect(() => {
@@ -67,6 +82,18 @@ export default function Index() {
       <View style={[styles.center, { backgroundColor: theme.bg }]}>
         <ActivityIndicator color={theme.accent} />
       </View>
+    );
+  }
+
+  // M4.8: a dangling session takes precedence over the normal redirect. Once
+  // the user picks Resume / Save / Discard, the prompt navigates itself (Resume
+  // → /focus) or clears state and lets us fall through to the gate below.
+  if (restorable && user) {
+    return (
+      <RestoreSessionPrompt
+        session={restorable}
+        onResolved={() => setRestorable(null)}
+      />
     );
   }
 
