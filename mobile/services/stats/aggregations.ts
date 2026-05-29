@@ -34,6 +34,15 @@ function prevDayMidnight(midnightMs: number): number {
   return d.getTime();
 }
 
+/** Local midnight of the day exactly one calendar day after `midnightMs`.
+ *  Calendar-aware / DST-safe counterpart to `prevDayMidnight` — used to walk a
+ *  streak run forward in `longestStreak`. */
+function nextDayMidnight(midnightMs: number): number {
+  const d = new Date(midnightMs);
+  d.setDate(d.getDate() + 1);
+  return d.getTime();
+}
+
 /** Start of the rolling 7-day window: device-local midnight 6 days ago. Today
  *  + the previous 6 days = 7 distinct calendar days, inclusive. Exported so
  *  the query hook can hand the same start time to SQL. */
@@ -91,6 +100,38 @@ export function currentStreak(
     cursor = prevDayMidnight(cursor);
   }
   return streak;
+}
+
+/** Longest run of consecutive device-local calendar days with ≥1 session, all
+ *  time. Unlike `currentStreak` there's no today/yesterday anchoring — this is
+ *  the historical best (S5.1 "Personal best" view), so it just scans the full
+ *  set of day-buckets for the longest consecutive run. Returns 0 on empty input.
+ *  Same day-bucket helpers as `currentStreak` so the two stay calendar/DST-
+ *  consistent. */
+export function longestStreak(
+  endedAtTimestamps: readonly number[],
+): number {
+  if (endedAtTimestamps.length === 0) return 0;
+
+  const dayBuckets = new Set<number>();
+  for (const ts of endedAtTimestamps) {
+    dayBuckets.add(localMidnight(ts));
+  }
+
+  let longest = 0;
+  for (const day of dayBuckets) {
+    // Only start counting from the head of a run: a day whose predecessor is
+    // absent. Every run is then walked exactly once.
+    if (dayBuckets.has(prevDayMidnight(day))) continue;
+    let run = 0;
+    let cursor: number = day;
+    while (dayBuckets.has(cursor)) {
+      run += 1;
+      cursor = nextDayMidnight(cursor);
+    }
+    if (run > longest) longest = run;
+  }
+  return longest;
 }
 
 /** Distractions per focused hour across the rolling 7-day window. Stable as

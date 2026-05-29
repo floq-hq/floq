@@ -1,27 +1,27 @@
 /**
- * Summary cards (S4.1) — three small cards under the hero score: current
- * streak, personal best, distraction rate (M4.3 / M4.4). `null` from a hook
- * renders an em-dash so an empty week / new user doesn't read as a real zero.
+ * Summary cards (S4.1) — the at-a-glance "now" row under the hero score: current
+ * streak + distraction rate (M4.3 / M4.4). `null` from a hook renders an em-dash
+ * so an empty week / new user doesn't read as a real zero.
  *
  * PR5 cleanup (audit Finding #9): streak reads the integer; "days" plural
  * unit picks "day" vs "days" so the surface matches Home's StreakCounter.
- * (audit Finding #14): distraction rate now rounds to 0 decimals — same
- * precision as score, so the three cards read uniformly.
+ * (audit Finding #14): distraction rate rounds to 0 decimals — same precision
+ * as score, so the cards read uniformly.
+ *
+ * S5.1: highest single score moved out of here into the dedicated all-time
+ * `PersonalBest` section (it was duplicating that section's label). This row is
+ * now purely the current-state glance — current streak (vs the section's
+ * longest) + this-week distraction rate.
  */
 import { StyleSheet, View } from 'react-native';
 import { Card, Text } from '../ui';
 import { useTheme } from '../../theme';
 import type { Theme } from '../../theme/tokens';
-import {
-  useCurrentStreak,
-  useDistractionRate,
-  usePersonalBest,
-} from '../../services/stats/useStats';
+import { useCurrentStreak, useDistractionRate } from '../../services/stats/useStats';
 
 export function SummaryCards() {
   const theme = useTheme();
   const { data: streak } = useCurrentStreak();
-  const { data: best } = usePersonalBest();
   const { data: rate } = useDistractionRate();
 
   const streakValue = streak ?? 0;
@@ -33,12 +33,6 @@ export function SummaryCards() {
         label="Streak"
         value={String(streakValue)}
         unit={streakValue === 1 ? 'day' : 'days'}
-      />
-      <SummaryCard
-        theme={theme}
-        label="Personal best"
-        value={best == null ? '—' : String(Math.round(best))}
-        unit="score"
       />
       <SummaryCard
         theme={theme}

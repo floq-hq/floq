@@ -182,6 +182,19 @@ export function getMaxFocusScore(): number | null {
   return row?.m ?? null;
 }
 
+/** The single highest-focus_score session in history, or null on an empty DB —
+ *  the "best session" item in the S5.1 Personal-best view (richer than the bare
+ *  MAX scalar from getMaxFocusScore: carries minutes, when, and the task title,
+ *  which is owner-private and shown only on the user's own screen). Ties resolve
+ *  to the most recent (ORDER BY ended_at DESC). Reassembles distractions so the
+ *  returned shape round-trips like the other reads here. */
+export function getBestSession(): CompletedSession | null {
+  const rows = getDb().getAllSync<SessionRow>(
+    'SELECT * FROM sessions ORDER BY focus_score DESC, ended_at DESC LIMIT 1',
+  );
+  return rowsToSessions(rows)[0] ?? null;
+}
+
 /** Count sessions completed today, for the cold-start fatigue modifier
  *  (timer.md context.sessions_today). DEVICE-LOCAL midnight — consistent with
  *  the wall-clock hour bucketing in services/session/compute.ts (O6 default:
