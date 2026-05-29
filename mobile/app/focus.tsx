@@ -45,6 +45,8 @@ import { writeSession } from '../services/session/distraction';
 import { startBackgroundPolicy } from '../services/session/backgroundPolicy';
 import { backgroundDistractionMessage } from '../services/session/backgroundNotice';
 import { scheduleBreakReminder } from '../services/notifications';
+import { queryClient } from '../services/queryClient';
+import { statsKeys } from '../services/stats/useStats';
 import type { CompletedSession } from '../services/session/types';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useActiveSessionStore } from '../stores/useActiveSessionStore';
@@ -193,6 +195,10 @@ export default function SessionScreen() {
     writeSession(completed).catch((err) => {
       if (__DEV__) console.warn('[session] writeSession failed', err);
     });
+
+    // Refresh the Stats screen immediately (S4.1 wiring of M4.3 handoff). Without
+    // this the just-completed session wouldn't show up until staleTime (30s).
+    queryClient.invalidateQueries({ queryKey: statsKeys.all });
 
     // End-of-break nudge (S4.2). Fire-and-forget; prompts for notification
     // permission on first use (a session just ended — a deliberate action, not

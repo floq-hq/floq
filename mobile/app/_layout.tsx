@@ -9,7 +9,9 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { configureNotifications } from '../services/notifications';
+import { queryClient } from '../services/queryClient';
 import { ThemeProvider, useTheme } from '../theme';
 
 function ThemedStack() {
@@ -51,7 +53,12 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <ThemeProvider>
-          <ThemedStack />
+          {/* TanStack Query host (S4.1) — mounted at the root per M4.3's
+              handoff so every stats hook (and future Firestore hooks) shares
+              one client + cache. */}
+          <QueryClientProvider client={queryClient}>
+            <ThemedStack />
+          </QueryClientProvider>
         </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
