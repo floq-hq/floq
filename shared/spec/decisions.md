@@ -346,6 +346,20 @@ The DONE-vs-end-early distinction is the user's **intent**, not the elapsed time
 
 **Implementation:** PR5. `mobile/services/session/overrun.ts` adds `export const MIN_FOCUS_FOR_RECOVERY = 5` + the bail. `mobile/app/session-summary.tsx` adds the early-route-to-home on `breakMinutes <= 0`. Tests cover: 0/3/4 min → 0 break; 5/10/20 min → BREAK_MIN floor still wins; `finalizeOnDone` round-trips both branches.
 
+### L22 — Streak follows device local time (resolves O6)
+
+**Date locked:** 2026-05-29
+**Decision:** The day-bucket for the streak (and for `countSessionsToday` / the M4.7 gap clock) is **device local time at session-end time**. No server-side time, no UTC normalization, no per-user time-zone field. Already implemented this way in `services/stats/aggregations.ts#currentStreak` (M4.4) and `services/storage/sessions.ts#countSessionsToday` (M3.3 fatigue input) — this locks the existing behavior and closes O6 by ratifying the default.
+
+**Why (and why not the alternatives):**
+- **Travel across time zones may feel odd.** A user who flies east loses a day-bucket boundary; flying west could "double-count" if a session ends both before and after the local midnight shifts. Accepted for MVP because (a) the user base in W8 beta is small and mostly stationary, and (b) the alternative — picking a "home" time zone or syncing via Firestore — adds complexity that's hard to make right and easy to make wrong (e.g. what's the right behavior for a user who actually moves to a new city?).
+- **UTC** would be predictable but feel even weirder — a session at 10pm in New York might land in a different streak day than a session at 11pm because of the UTC midnight rollover. Worse UX than the current behavior.
+- **A "streak grace period"** (allow a streak to survive one missed local-calendar day) is the natural post-MVP refinement if real users complain. Cheap to add later; not in MVP because it changes the semantic of "consecutive."
+
+**Implementation:** already shipped — `aggregations.ts#currentStreak` uses `Date.setHours(0,0,0,0)` for the day bucket; `countSessionsToday` uses the same midnight construction; the M4.7 gap clock reads `Date.now()` for the current side and the stored epoch-ms `ended_at` for the prior side. No new code; this is a spec close.
+
+**Revisit:** if beta feedback flags travel weirdness — add a one-day grace period (the cheapest fix) before considering per-user time-zone fields.
+
 ---
 
 ## Open decisions — must resolve by end of W1
@@ -372,12 +386,9 @@ Moved to Locked — see **L15**. Outcome: a **user-configurable setting** (`forg
 
 Superseded by **L18** (social-as-core pivot). The social graph is no longer an n:n friend graph — it's the **1:1 partner edge** (`partnerships/{pairId}`, sorted-UID doc). The original (a)/(b) options are moot. Partner-edge schema + security rules are specced in the new partnership M-task (`tasks.md`, W7 Phase A); the old friend-graph framing is retained in the superseded W7 tasks for the L18 revert path.
 
-### O6 — Streak across time-zone change
+### O6 — Streak across time-zone change ✅ RESOLVED (2026-05-29)
 
-**Must resolve by:** End of W4
-**Default:** Streak follows device local time. May feel odd to frequent travelers; acceptable for MVP.
-**Owner:** Mohamed
-**Notes:** Revisit post-MVP. May need a "streak grace period" if users complain.
+Moved to Locked — see **L22**. Outcome: streak follows **device local time** (the default option). Acceptable for MVP; post-MVP "grace period" revisit only if travelers complain.
 
 ### O7 — Skippable break / enforced-recovery override ✅ RESOLVED (2026-05-27)
 
