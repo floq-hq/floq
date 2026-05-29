@@ -160,6 +160,18 @@ export function getLastSessionEndedAt(): number | null {
   return row?.ended_at ?? null;
 }
 
+/** Every session's focus_score in chronological order (oldest first) — the
+ *  input series for the M5.1 EWMA forecast (services/ml/forecast). Lightweight:
+ *  no distraction join, just the scalar series. Same L16 invariant as the other
+ *  reads here — DONE (`completed=1`) AND saved partials (`completed=0`) both
+ *  feed the forecast; discarded sessions never wrote a row, so no filter. */
+export function getFocusScoreSeries(): number[] {
+  const rows = getDb().getAllSync<{ focus_score: number }>(
+    'SELECT focus_score FROM sessions ORDER BY ended_at ASC',
+  );
+  return rows.map((r) => r.focus_score);
+}
+
 /** Highest single-session focus_score in history, or null if there are no
  *  sessions. SQLite returns one row with m=null on an empty table — normalize
  *  to a plain null so callers don't have to unpack the shape. */

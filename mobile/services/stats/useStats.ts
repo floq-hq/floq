@@ -15,8 +15,10 @@
 
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 
+import { forecastNext7Days, type Forecast } from '../ml/forecast';
 import {
   getAllSessionEndedAt,
+  getFocusScoreSeries,
   getMaxFocusScore,
   getSessionsSince,
 } from '../storage/sessions';
@@ -34,6 +36,7 @@ export const statsKeys = {
   streak: ['stats', 'streak'] as const,
   distractionRate: ['stats', 'distractionRate'] as const,
   personalBest: ['stats', 'personalBest'] as const,
+  forecast: ['stats', 'forecast'] as const,
 };
 
 export function useWeeklyFocusScore(): UseQueryResult<number | null> {
@@ -69,5 +72,16 @@ export function usePersonalBest(): UseQueryResult<number | null> {
   return useQuery({
     queryKey: statsKeys.personalBest,
     queryFn: () => personalBest(getMaxFocusScore()),
+  });
+}
+
+/** Next-7-day forecast (M5.1). Returns `null` until the user has
+ *  MIN_SESSIONS_FOR_FORECAST (7) sessions — S5.2 reads null as the cold-regime
+ *  "learning your rhythm" state, and derives the wide-vs-tight confidence
+ *  caption from the session count against the exported forecast thresholds. */
+export function useForecast(): UseQueryResult<Forecast | null> {
+  return useQuery({
+    queryKey: statsKeys.forecast,
+    queryFn: () => forecastNext7Days(getFocusScoreSeries()),
   });
 }
