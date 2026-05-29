@@ -159,11 +159,19 @@ export function computeSessionPlan(
   const rmod = recoveryMod(gapMin, prevBreak);
   const dmod = depletionMod(fmod, rmod);
 
-  const adjustedFocus = clamp(
-    Math.floor(baseline.focusMinutes * dmod),
-    FOCUS_MIN,
-    FOCUS_MAX,
-  );
+  const depletedFocus = Math.floor(baseline.focusMinutes * dmod);
+
+  // L20 / Bug #6 — task-estimate cap. The cold-start formula recommends FOCUS
+  // CAPACITY, not task length, so a 25-min task can land a 72-min "Suggested
+  // stop" and the user runs out of work mid-overrun. Cap the recommendation at
+  // ceil(estMinutes × 1.5) (planning-fallacy buffer) BEFORE the FOCUS_MIN
+  // clamp wins for tiny tasks (the science floor still holds — a 5-min task
+  // gets a 15-min session, not 8). The cap lives here, NOT in coldStart.ts —
+  // the frozen formula stays untouched (decisions.md L20).
+  const taskCap = Math.ceil(task.estMinutes * TASK_ESTIMATE_BUFFER);
+  const capped = Math.min(depletedFocus, taskCap);
+
+  const adjustedFocus = clamp(capped, FOCUS_MIN, FOCUS_MAX);
   const adjustedBreak = clamp(
     Math.floor(adjustedFocus * BREAK_RATIO),
     BREAK_MIN,
@@ -186,11 +194,18 @@ export function computeSessionPlan(
       dmod,
       gapMin,
       prevBreak,
+      taskCap,
+      capBites: taskCap < depletedFocus,
     });
   }
 
   return plan;
 }
+
+/** Planning-fallacy buffer on the task estimate before it caps the
+ *  recommendation. 1.5 = 50% slack for noisy LLM estimates. Calibrated
+ *  constant — revisit with real-usage data. (decisions.md L20) */
+export const TASK_ESTIMATE_BUFFER = 1.5;
 
 /** Resolve `gapMin` + `prevBreak` for the M4.7 depletion path. Caller-provided
  *  values win (tests inject); otherwise we read the most-recent ended_at + its

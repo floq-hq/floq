@@ -16,6 +16,7 @@ import { useCallback, useState } from 'react';
 import { router, useFocusEffect } from 'expo-router';
 import { getHasSeenIntro } from '../../services/intro/seen';
 import { computeSessionPlan } from '../../services/session/compute';
+import { cancelBreakReminder } from '../../services/notifications';
 import type { Task } from '../../services/tasks';
 
 export function useStartSession(topTask: Task | null) {
@@ -28,6 +29,10 @@ export function useStartSession(topTask: Task | null) {
   const launch = useCallback(() => {
     if (!topTask || launching) return;
     setLaunching(true);
+    // Cancel any pending end-of-break notification — the user is starting again
+    // before the break ended (L17: skippable recovery), so "Recovery's almost
+    // up" mid-Session 2 would be noise. Fire-and-forget; never blocks the start.
+    void cancelBreakReminder();
     setTimeout(() => {
       try {
         const plan = computeSessionPlan(topTask.id);

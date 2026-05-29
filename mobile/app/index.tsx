@@ -20,6 +20,8 @@ import { resolveStartRoute, useCurrentUser } from '../services/firebase';
 import { scheduleSessionStartReminder } from '../services/notifications';
 import { useOnboardingStore } from '../stores/useOnboardingStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
+import { useTaskStore } from '../stores/useTaskStore';
+import { useActiveSessionStore } from '../stores/useActiveSessionStore';
 import type { OnboardingAnswers } from '../services/onboarding';
 import { getRestorableSession } from '../services/session/restore';
 import type { ActiveSession } from '../services/session/types';
@@ -66,6 +68,22 @@ export default function Index() {
   useEffect(() => {
     if (!settingsHydrated) hydrateSettings();
   }, [settingsHydrated, hydrateSettings]);
+
+  // Hydrate the task store + the active-session store at boot, NOT on Home
+  // mount, so a Resume from the RestoreSessionPrompt that routes straight to
+  // /focus has both available — without these the /focus screen sees an
+  // undefined task and a null active session, the mount effect short-circuits,
+  // and the timer freezes at 00:00 (Bug #7, PR3).
+  const tasksHydrated = useTaskStore((s) => s.hydrated);
+  const hydrateTasks = useTaskStore((s) => s.hydrate);
+  const activeHydrated = useActiveSessionStore((s) => s.hydrated);
+  const hydrateActive = useActiveSessionStore((s) => s.hydrate);
+  useEffect(() => {
+    if (!tasksHydrated) void hydrateTasks();
+  }, [tasksHydrated, hydrateTasks]);
+  useEffect(() => {
+    if (!activeHydrated) hydrateActive();
+  }, [activeHydrated, hydrateActive]);
 
   // Re-sync the daily session-start reminder on launch (S4.2), WITHOUT prompting
   // ({ request: false }) — a launch must never trigger a permission dialog. It's

@@ -19,6 +19,8 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, Text } from '../ui';
 import { clearActiveSession } from '../../services/session/activeSessionPersist';
+import { queryClient } from '../../services/queryClient';
+import { statsKeys } from '../../services/stats/useStats';
 import { useActiveSessionStore } from '../../stores/useActiveSessionStore';
 import { useTheme } from '../../theme';
 
@@ -43,6 +45,9 @@ export function EndEarlySheet({ visible, onDismiss }: Props) {
     setBusy(true);
     try {
       abandonSession(); // writes completed:false partial; clears the mirror
+      // Mirror the DONE wiring (focus.tsx onDone): refresh Stats immediately
+      // so a tab-switch right after Save shows the partial, not stale numbers.
+      queryClient.invalidateQueries({ queryKey: statsKeys.all });
     } finally {
       setBusy(false);
     }

@@ -8,8 +8,9 @@
  * The launcher (useStartSession) hands off { taskId, plan } via route params. The plan drives the phase
  * boundaries; the task id resolves the title shown under the clock. On mount the
  * screen opens the in-flight session in the active-session store (M3.2); DONE
- * ends it, writes the record (writeSession, M3.2), promotes the next task
- * (markDone, M2.5), and routes to the summary.
+ * ends it, writes the record via finalizeOnDone (M4.5/M4.6), and routes to the
+ * summary. Task promotion is NOT automatic — the summary screen (Option 7 /
+ * L19) hosts the explicit "Mark task done" affordance.
  *
  * Timing model: a single shared `elapsedSeconds`, advanced on the UI thread by a
  * Reanimated frame callback (no per-second setState) that derives it from the wall
@@ -25,7 +26,7 @@
  * (The on-screen clock and the recorded focus minutes now share the same wall-clock
  * basis — session.startedAt — so they always agree.)
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -85,7 +86,6 @@ export default function SessionScreen() {
   const task = useTaskStore((s) => s.tasks.find((t) => t.id === params.taskId));
   const startSession = useActiveSessionStore((s) => s.startSession);
   const endSession = useActiveSessionStore((s) => s.endSession);
-  const markDone = useTaskStore((s) => s.markDone);
 
   const elapsedSeconds = useSharedValue(0);
   // Wall-clock anchor (session.startedAt). The clock is derived as (now - anchor)
@@ -132,23 +132,37 @@ export default function SessionScreen() {
 
   // Begin — or RESUME — the in-flight session in the active-session store (M3.2)
   // so the distraction button (S3.2) and the Done writer (S3.3) have a session to
-  // act on. If one already exists for this task (the screen remounted after a
-  // background), resume it: never start a fresh session that would reset the clock
-  // or wipe distractions already logged (incl. background ones from M3.4). Either
-  // way, seed the wall-clock anchor from the session's startedAt.
+  // act on.
+  //
+  // Bug #7 (PR3) — the deps array MUST react to `task?.id`. On a Resume from
+  // the RestoreSessionPrompt, the screen mounts BEFORE the task store has
+  // hydrated (Resume routes straight to /focus without going through Home,
+  // which used to be the only hydrate trigger). The original `[]`-deps effect
+  // returned early on the first render with no task and never re-fired — so
+  // `startedAtMs.value` stayed at 0 and the useFrameCallback gated the clock
+  // off. The ref guard keeps a second startSession from firing when the task
+  // store hydrates AFTER an existing-session match.
+  const sessionInitialized = useRef(false);
   useEffect(() => {
+    if (sessionInitialized.current) return;
     if (!plan || !task) return;
     const existing = useActiveSessionStore.getState().active;
-    if (!existing || existing.taskId !== task.id) {
+    if (existing && existing.taskId === task.id) {
+      // Resume: an in-flight session for this task already lives in the store
+      // (hydrated at boot in app/index.tsx). Seed the wall-clock anchor from
+      // its startedAt — never overwrite it (that's how the original elapsed
+      // time and any distractions logged before the kill survive).
+      startedAtMs.value = existing.startedAt;
+    } else {
       startSession({
         taskId: task.id,
         task: { title: task.title, difficulty: task.difficulty, estMinutes: task.estMinutes },
         plan,
       });
+      startedAtMs.value = useActiveSessionStore.getState().active?.startedAt ?? Date.now();
     }
-    startedAtMs.value = useActiveSessionStore.getState().active?.startedAt ?? Date.now();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
-  }, []);
+    sessionInitialized.current = true;
+  }, [plan, task?.id, startSession, startedAtMs]);
 
   // Background-during-session policy (M3.4): while this screen is mounted, watch
   // AppState. If the app is backgrounded past the user's threshold (decisions.md
@@ -162,7 +176,13 @@ export default function SessionScreen() {
     return stop;
   }, []);
 
-  // DONE: end the session, persist it, promote the next task, show the summary.
+  // DONE: end the session, persist it, show the summary.
+  //
+  // PR3 / L19: task promotion is **no longer automatic here**. The summary
+  // screen now hosts the explicit "Mark task done" affordance — finishing a
+  // session does not mean the task is done (a 4-hour task with 70-min
+  // recommended sessions was being silently consumed). Default keeps the
+  // task; the user marks complete on the summary when they actually are.
   const onDone = useCallback(() => {
     const snapshot = endSession(); // returns the in-flight session, then clears it
     if (!snapshot) {
@@ -184,13 +204,9 @@ export default function SessionScreen() {
 
     // End-of-break nudge (S4.2). Fire-and-forget; prompts for notification
     // permission on first use (a session just ended — a deliberate action, not
-    // app open). Silent no-op if permission is denied. NOTE: when M4.8/M4.9 land
-    // the session-end rework, this call moves with the DONE/end-early branch.
+    // app open). Silent no-op if permission is denied. PR3: useStartSession +
+    // /recovery's Skip both cancel this so it never fires mid-Session 2.
     void scheduleBreakReminder(completed.plan.breakMinutes);
-
-    // Task promotion (session-flow.md §Task promotion): drop the current task; the
-    // next auto-promotes, or an empty queue shows Home's brain-dump prompt.
-    markDone(snapshot.taskId);
 
     router.replace({
       pathname: '/session-summary',
@@ -199,9 +215,13 @@ export default function SessionScreen() {
         distractions: String(completed.distractions.length),
         breakMinutes: String(completed.plan.breakMinutes),
         score: String(completed.focusScore),
+        // PR3: pass the task identity through so the summary can render the
+        // "Mark task done" affordance for THIS task.
+        taskId: snapshot.taskId,
+        taskTitle: snapshot.task.title,
       },
     });
-  }, [endSession, markDone]);
+  }, [endSession]);
 
   // Defensive: S3.0 always passes a plan, but a stray deep link shouldn't crash.
   if (!plan) {

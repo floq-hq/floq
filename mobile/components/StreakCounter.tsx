@@ -1,6 +1,10 @@
 /**
- * Streak counter (S2.2). Compact widget for the Home top-right showing the
- * current focus streak in days, read from `useUserStore().currentStreak`.
+ * Streak counter (S2.2 + PR3 Bug #4). Compact widget for the Home top-right
+ * showing the current focus streak in days, sourced from the SQLite-derived
+ * M4.4 streak via the TanStack `useCurrentStreak` hook. The same hook powers
+ * the Stats screen, so Home / Stats / summary all read one truth — invalidated
+ * by `queryClient.invalidateQueries({ queryKey: statsKeys.all })` after every
+ * session save (focus.tsx, EndEarlySheet).
  *
  * Restraint by design: a streak of 0 gets no fire, no celebration — just the
  * number and a "Day 0" caption. From day 1 it lights up (🔥) and the caption
@@ -8,12 +12,14 @@
  */
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Text } from './ui';
-import { useUserStore } from '../stores/useUserStore';
+import { useCurrentStreak } from '../services/stats/useStats';
 import { useTheme } from '../theme';
 
 export function StreakCounter({ style }: { style?: StyleProp<ViewStyle> }) {
   const theme = useTheme();
-  const streak = useUserStore((s) => s.currentStreak);
+  // useCurrentStreak() returns 0 while the query is loading (queryFn returns a
+  // number, never undefined) — so we never render a flash of empty state.
+  const streak = useCurrentStreak().data ?? 0;
   const active = streak > 0;
 
   return (

@@ -29,7 +29,7 @@ Recommendation is recomputed at **session start**, not once per day. Same user a
 | Input | Source | Type |
 |---|---|---|
 | `task.difficulty` | LLM classifier (1–5) | int |
-| `task.estimated_minutes` | LLM estimate | int |
+| `task.estimated_minutes` | LLM estimate — drives the **task-estimate cap** on the orchestration layer (see `decisions.md` L20) | int |
 | `context.hour_bucket` | current local time → morning / afternoon / evening / night | enum |
 | `context.day_of_week` | weekday vs weekend | enum |
 | `context.sessions_today` | counter, resets at local midnight | int |
@@ -61,6 +61,23 @@ break = clamp(break, 5, 25);
 - Tuesday 10am, 1st session today, hard task
 - `60 × 1.0 × 0.85 × 1.0 × 1.0 = 51.0`
 - Recommendation: focus = 51, break = 11
+
+## Task-estimate cap (L20)
+
+The cold-start formula recommends **focus capacity**, not task duration. A 25-min task can still produce a 72-min recommendation if the user's base_focus is high — leaving them with ~50 min of overrun and no actual work to do. The orchestration layer (`services/session/compute.ts`, not `coldStart.ts`) caps the focus recommendation at:
+
+```ts
+task_cap = ceil(task.estimated_minutes * TASK_ESTIMATE_BUFFER)   // 1.5 (L20)
+focus    = min(focus, task_cap)
+focus    = clamp(focus, 15, 90)                                  // L20 floor still wins
+```
+
+- A 25-min task → cap = 38 → max 38-min focus suggestion.
+- A 50-min task → cap = 75 → no cap if formula < 75.
+- A 4-hour task → cap = 360 → cap never bites (FOCUS_MAX = 90 wins).
+- A 5-min task → cap = 8 → FOCUS_MIN = 15 still wins (the science floor is intact).
+
+The buffer (`1.5`) is the planning-fallacy allowance — LLM estimates are noisy and users often run longer than they predict. Operationally O(1). The frozen formula is unchanged; the cap is a separate orchestration constraint applied AFTER the depletion mod and BEFORE the final 15/90 clamp.
 
 ## Warming formula (sessions 5–13)
 
@@ -99,7 +116,7 @@ The `23` is the research-backed minutes-of-recovery cost per distraction (Mark e
 1. **Only one task is visible at a time.** Hidden tasks reappear after the current is done.
 2. **Distraction button always visible** during a session. One-tap log, no confirm.
 3. **No pause.** Pausing IS a distraction — log one and continue.
-4. **Recovery is recommended, not blocked (L17 supersedes the old hard-enforce).** After Done the app recommends a break (5–25 min); the next session is **not** blocked. Under-resting (starting before the end→start gap closes) trims the next recommendation via `recovery_mod` — see `decisions.md` L17.
+4. **Recovery is recommended, not blocked (L17 supersedes the old hard-enforce).** After Done the app shows a brief summary glance (5s) then routes to a dedicated `/recovery` screen with a live countdown (PR3). The next session is **not** blocked and Start is **not** disabled. Under-resting (starting before the end→start gap closes) trims the next recommendation via `recovery_mod` — see `decisions.md` L17. The end-of-break notification is cancelled whenever the user skips into a new session.
 5. **Timer recomputes at every session start.**
 
 ## Why not Pomodoro

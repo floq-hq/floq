@@ -40,6 +40,7 @@ vi.mock('expo-notifications', () => ({
 import {
   preferredTimeToHour,
   breakReminderSeconds,
+  cancelBreakReminder,
   ensurePermission,
   scheduleBreakReminder,
   scheduleSessionStartReminder,
@@ -101,6 +102,33 @@ describe('break reminder', () => {
     expect(mocks.cancelScheduledNotificationAsync).toHaveBeenCalledTimes(1);
     expect(state.scheduled).toHaveLength(1);
     expect(state.scheduled[0].content.data).toEqual({ kind: 'break' });
+  });
+});
+
+// PR3 / Bug #3 — `cancelBreakReminder()` is the public API the session-start
+// path uses to kill a pending end-of-break nudge so it never fires
+// mid-Session 2 (L17 lets the user skip recovery).
+describe('cancelBreakReminder', () => {
+  it('clears a pending break reminder, leaves others untouched', async () => {
+    state.permission = { granted: true, canAskAgain: false };
+    await scheduleBreakReminder(5);
+    await scheduleSessionStartReminder('morning');
+    expect(state.scheduled).toHaveLength(2);
+
+    await cancelBreakReminder();
+    expect(state.scheduled).toHaveLength(1);
+    expect(state.scheduled[0].content.data).toEqual({ kind: 'session-start' });
+  });
+
+  it('is idempotent / no-op when no break reminder is scheduled', async () => {
+    await cancelBreakReminder();
+    expect(mocks.cancelScheduledNotificationAsync).not.toHaveBeenCalled();
+  });
+
+  it('does NOT prompt for permission (cancel path is side-effect free)', async () => {
+    state.permission = { granted: false, canAskAgain: true };
+    await cancelBreakReminder();
+    expect(mocks.requestPermissionsAsync).not.toHaveBeenCalled();
   });
 });
 

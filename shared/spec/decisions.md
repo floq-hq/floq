@@ -280,6 +280,44 @@ The DONE-vs-end-early distinction is the user's **intent**, not the elapsed time
 
 **This is planning, not progress.** It reshapes W5–W8, but the immediate next action is unchanged: **close W4, then get the product in front of real users.** A written spec is not traction.
 
+### L19 — DONE doesn't auto-promote the task; task completion is explicit
+
+**Date locked:** 2026-05-29
+**Decision:** Tapping DONE on `/focus` ends the session — writes the record, computes the focus score, recommends recovery — but **does NOT remove the task from the queue**. Task promotion (`markDone`) is an **explicit user action** that happens via the *Mark task done* affordance on the post-session summary (the best moment for the decision: post-flow, when the user has perspective) or via queue management on Home. Supersedes the original `session-flow.md` §Task promotion ("Done → promote next").
+
+**Why (the gap this closes):** the original spec assumed DONE-on-session = DONE-on-task. That is correct only for **single-session tasks**. For any substantial task — the kind a focus app exists for — DONE silently consumed the queue: a 4-hour task with 70-min recommended sessions would be erased the first time the user tapped DONE, leaving no record of "still to do." End-early → Save was the wrong tool (skips recovery, treats the session as an interrupted attempt). The user had no clean path for "I focused well, the task isn't done yet" — which is the **normal** path for most real work.
+
+**The recovery screen is the right surface, not `/focus` or the summary:**
+- Mid-flow (on `/focus`) is the wrong moment to ask "is the task done?" — the user just punched out of focus and wants the timer to end.
+- The summary is too brief — early sim testing (2026-05-29) showed the 5–8s auto-dismiss left no time for any tap; the user couldn't act before it disappeared. Putting the decision there was a UX dead end.
+- The recovery screen has **minutes** of dwell (5–25 min recomputed break). The user is cooling down, has the countdown in front of them, and has both the perspective AND the time to assess whether the task is actually finished.
+- The default is **task stays** — auto-route, Skip recovery, tap anything-else all preserve the task. Marking complete is a deliberate single tap on the explicit affordance.
+
+**End-early Save / Discard never auto-promote** (unchanged, L16). So all three end paths now agree: nothing auto-`markDone`s the task; the user is the only one who decides "this task is done."
+
+**Implementation:** PR3 (post-#120/#121). Files: `mobile/app/focus.tsx` (remove `markDone` from `onDone`), `mobile/app/recovery.tsx` (the *Mark task done* affordance — `Button variant="secondary" size="md"`, shown only when the just-finished task is still in the queue). `mobile/app/session-summary.tsx` forwards `taskId` + `taskTitle` to the recovery route. The spec changes are in `session-flow.md` §Task promotion + §Session-end summary + §Recovery screen + the flow diagram.
+
+### L20 — Task-estimate cap on the session recommendation
+
+**Date locked:** 2026-05-29
+**Decision:** The session recommendation in `computeSessionPlan` is capped at `ceil(task.estimated_minutes × 1.5)` after the depletion mod (M4.7) and before the final 15/90 clamp. The cap lives in the **orchestration layer** (`services/session/compute.ts`), NOT inside `coldStart.ts`. The frozen formula + its constants are unchanged; the 15-min lower clamp still wins for tiny tasks.
+
+**`TASK_ESTIMATE_BUFFER = 1.5`** — calibrated, not frozen. Revisit upward / downward with real beta data.
+
+**Why (the gap this closes):** the cold-start formula recommends **focus capacity** (`base_focus × distraction × difficulty × time × fatigue`). It does not read `task.estimated_minutes` — the input is listed in `timer.md` but never consumed. So a 25-min easy task can produce a 72-min "Suggested stop" (math identity: `base × 1.0 × 1.0 × 0.85 × 1.0 = 0.85 × base`), leaving the user with ~50 min of overrun and no actual work to do (real sim test, 2026-05-29). Two different tasks (easy 25-min, hard 50-min) both landing on 72 min is a math identity (`0.85` appears in both `difficulty_mod` for hard and `time_match_mod` for off-bucket) — not a formula bug, but a real UX failure.
+
+**Mechanics:**
+- `task_cap = ceil(task.estimated_minutes × 1.5)`
+- `capped = min(formula_focus, task_cap)`
+- `final = clamp(capped, 15, 90)` — FOCUS_MIN/MAX still win at the extremes
+- Recovery break recomputed from the (capped) focus via the existing `BREAK_RATIO/BREAK_MIN/BREAK_MAX` — no separate break cap needed.
+
+**Why 1.5 (the buffer):** the planning-fallacy literature supports a 1.2–1.5 slack on self-reported estimates; LLM estimates have similar noise. Tighter (1.2) bites earlier and reads as "I have to finish in exactly the estimate," which is the wrong mental model. Looser (2.0) lets the 72-min-on-25-min case through. 1.5 splits the difference and is consistent with the other soft / calibrated constants (RECOVERY_FLOOR 0.85, DEPLETION_FLOOR 0.75).
+
+**Why NOT inside `coldStart.ts`:** the safety rule on coldStart freezes the formula structure + constants. The cap is a separate constraint applied OUTSIDE the frozen formula at the orchestration layer — same pattern as M4.7's `depletion_mod` (L17).
+
+**Implementation:** PR3. `mobile/services/session/compute.ts` adds `export const TASK_ESTIMATE_BUFFER = 1.5` + the cap step. The dev-mode `console.log` shows `taskCap` + `capBites` so the cap is observable. Tests cover: short task caps, long task doesn't cap, the FOCUS_MIN floor wins below 10 estimated minutes, the buffer constant doesn't silently drift.
+
 ---
 
 ## Open decisions — must resolve by end of W1

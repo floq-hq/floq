@@ -34,7 +34,12 @@ vi.mock('../../storage/sessions', () => ({
   getRecentSessions: vi.fn((_n: number) => sql.recent),
 }));
 
-import { hourBucket, buildSessionInputs, computeSessionPlan } from '../compute';
+import {
+  TASK_ESTIMATE_BUFFER,
+  hourBucket,
+  buildSessionInputs,
+  computeSessionPlan,
+} from '../compute';
 
 // A deterministic local Tuesday, 2026-05-26 10:00 (a "morning" time).
 const at = (h: number, m = 0) => new Date(2026, 4, 26, h, m, 0);
@@ -54,7 +59,10 @@ function makeTask(over: Partial<Task> = {}): Task {
     id: 't1',
     title: 'ship the orchestrator',
     difficulty: 5,
-    estMinutes: 30,
+    // Default estMinutes is high enough that the L20 task-estimate cap (1.5×)
+    // never bites in the formula-arithmetic tests below — those isolate the
+    // depletion/clamp behavior. Cap-specific tests override this explicitly.
+    estMinutes: 120,
     order: 0,
     done: false,
     createdAt: 0,
@@ -193,5 +201,72 @@ describe('computeSessionPlan', () => {
   it('throws when onboarding answers are missing', () => {
     store.answers = null;
     expect(() => computeSessionPlan('t1', { now: morning10 })).toThrow(/onboarding/);
+  });
+});
+
+// L20 / Bug #6 — task-estimate cap. The cold-start formula recommends focus
+// CAPACITY, not task duration. A 25-min task can land a 72-min suggestion
+// without this cap (real sim test, 2026-05-29). The cap lives outside the
+// frozen formula at the orchestration layer.
+describe('TASK_ESTIMATE_BUFFER constant (drift guard)', () => {
+  it('is exactly 1.5 (decisions.md L20)', () => {
+    // If this asserts and someone "fixed" the value, read L20 — the buffer is
+    // calibrated, not frozen, but a change without spec sign-off is the
+    // forbidden silent drift the test guards against.
+    expect(TASK_ESTIMATE_BUFFER).toBe(1.5);
+  });
+});
+
+describe('computeSessionPlan — task-estimate cap (L20)', () => {
+  beforeEach(() => {
+    store.answers = answers;
+    sql.sessionsToday = 0;
+    sql.lastEndedAt = null;
+    sql.recent = [];
+  });
+
+  it('caps a 25-min task: ceil(25 × 1.5) = 38 → focus ≤ 38 instead of 51', () => {
+    // Without the cap: the worked-example formula gives focus = 51 (60 × 0.85).
+    // With the cap: min(51, ceil(25 × 1.5) = 38) = 38; break floor(38 × 0.22) = 8.
+    store.tasks = [makeTask({ estMinutes: 25 })];
+    const plan = computeSessionPlan('t1', { now: morning10 });
+    expect(plan.focusMinutes).toBe(38);
+    expect(plan.breakMinutes).toBe(8);
+  });
+
+  it('does NOT cap a long task: 4-hr estimate → cap (360) > FOCUS_MAX (90)', () => {
+    // Long task: cap = ceil(240 × 1.5) = 360 → never bites; formula wins.
+    // Worked example: focus = 51, break = 11.
+    store.tasks = [makeTask({ estMinutes: 240 })];
+    const plan = computeSessionPlan('t1', { now: morning10 });
+    expect(plan).toEqual({ focusMinutes: 51, breakMinutes: 11, regime: 'cold' });
+  });
+
+  it('FOCUS_MIN (15) still wins for tiny tasks (5-min estimate)', () => {
+    // 5-min task: cap = ceil(5 × 1.5) = 8 → final = clamp(8, 15, 90) = 15.
+    // The science floor (no flow below 15 min) is intact (timer.md / L20).
+    store.tasks = [makeTask({ estMinutes: 5 })];
+    const plan = computeSessionPlan('t1', { now: morning10 });
+    expect(plan.focusMinutes).toBe(15);
+  });
+
+  it("doesn't cap when the cap >= the formula output (cap stays inert)", () => {
+    // 60-min task: cap = ceil(60 × 1.5) = 90; formula = 51 → cap inert.
+    store.tasks = [makeTask({ estMinutes: 60 })];
+    const plan = computeSessionPlan('t1', { now: morning10 });
+    expect(plan.focusMinutes).toBe(51);
+  });
+
+  it('cap bites only when stricter than depletion + clamp combined', () => {
+    // High depletion (3rd today, gap=0): pre-cap formula goes to 38 already.
+    // Cap with 25-min estimate: ceil(25 × 1.5) = 38 → same number → no
+    // visible change but the path is exercised.
+    store.tasks = [makeTask({ estMinutes: 25 })];
+    sql.sessionsToday = 2;
+    sql.lastEndedAt = morning10;
+    sql.recent = [{ plan: { breakMinutes: 11 } }];
+    const plan = computeSessionPlan('t1', { now: morning10 });
+    // depletion alone → 38; cap = 38; min(38, 38) = 38.
+    expect(plan.focusMinutes).toBe(38);
   });
 });

@@ -25,7 +25,10 @@ FOCUS SESSION (phase indicator + live timer)
   │
   ├── Done tapped ──────→ Focus score; record overrun; recompute break from actual mins
   │                           ↓
-  │                       Recovery break (5–25 min) — RECOMMENDED + skippable (L17)
+  │                       Session summary (8s glance, stats only — no decisions)
+  │                           ↓
+  │                       Recovery screen — live countdown; Mark task done? (L19);
+  │                                          Start next / Skip (L17)
   │                           ↓
   │                       Update ML / Sync to social profile
   │                           ↓
@@ -62,29 +65,38 @@ Edge cases to handle:
 - Crossing midnight mid-session: counts toward the calendar day in which the session **started**.
 - Travel across time zones: streak follows device local time. (May feel odd; revisit post-MVP.)
 
-## Task promotion
+## Task promotion (L19 — DONE doesn't auto-promote)
 
 After the user taps Done:
 
-1. Current task is removed from the priority queue.
-2. The next task in the queue auto-promotes to "top task" — visible on Home.
-3. If the queue is empty, Home shows the brain-dump prompt.
+1. The session record is written (focus score, overrun, recomputed break — L16).
+2. **The task STAYS in the priority queue.** A finished session does NOT mean a finished task — most substantial tasks span multiple sessions, and the old "DONE auto-promotes" rule silently consumed long-running tasks (decisions.md L19).
+3. The user marks tasks complete **explicitly** — via the *Mark task done* affordance on the post-session summary (best moment for the decision: post-flow, when the user has perspective), or via swipe / queue management on Home.
+4. If the user marks done and the queue becomes empty, Home shows the brain-dump prompt.
 
-The auto-promotion is intentional friction reduction. The "force commitment" rationale is preserved because the user can't see the other tasks during the previous session — they only see the next one after Done.
-
-**End early ("I stopped") does NOT promote** (L16): the task stays at the top of the queue (no `markDone`), so the user can pick it back up next session.
+**End early ("I stopped") does NOT promote either** (L16, unchanged): the task stays at the top of the queue (no `markDone`), so the user can pick it back up next session.
 
 ## Session-end summary
 
-After Done, show a quick summary card before kicking the user to recovery:
+A calm stats glance shown for **8 seconds** after Done, then auto-routes to the recovery screen. **No interactive decisions live here** — early sim testing (2026-05-29) found the auto-dismiss left no time for any tap, so the task-done decision moved to the recovery screen where there are minutes of dwell.
 
-- Minutes focused
+- Minutes focused (hero)
 - Distractions logged
-- Focus score (with the formula visible on tap)
-- Streak update
-- "Recovery: X min" countdown to next session
+- Focus score (M4.1; negative scores are meaningful — see `timer.md`)
+- Streak (from the live SQLite-derived `useCurrentStreak`, not a separate store)
 
-Then auto-dismiss after 8 seconds (or on tap) to a recovery screen.
+Tap-anywhere routes to recovery; otherwise the 8-second auto-route fires.
+
+## Recovery screen
+
+A dedicated full-screen route reached automatically from the summary. Clean by design — one number, the task-done decision when applicable, two CTAs:
+
+- **Live countdown** (`MM:SS`) from the recomputed `break_minutes` (M4.6). Reanimated tick off the JS thread (same pattern as `SessionTimer`); React state only flips at the boundary, not per second.
+- **Mark task done** affordance (Option 7 / L19) — only shown when the just-finished task is still in the queue. Single tap removes the task; auto-promotes the next one. The recovery screen is where this decision belongs because (a) the user is cooling down and has perspective, and (b) the dwell time of the countdown (5–25 min recommended) is generous, unlike the 8-second summary glance.
+- **Start next session** — secondary CTA before the countdown completes, primary after (a calm emphasis flip, no animation). Cancels the pending end-of-break notification and routes to `/focus`.
+- **Skip recovery** — ghost CTA. Cancels the notification, routes to Home. Under-resting trims the next session's recommendation via `recovery_mod` (L17) — never blocked, never docked.
+
+Tap-anywhere does NOT dismiss the recovery screen — this is deliberate dwell. When the countdown reaches `00:00`, the Start CTA's emphasis flips but the screen does not auto-dismiss; the notification fires.
 
 ## Focus partnership (per `decisions.md` L18 — Phase A)
 
