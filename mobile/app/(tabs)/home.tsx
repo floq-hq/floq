@@ -21,6 +21,7 @@ import { router } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, Card, Pill, Text } from '../../components/ui';
+import { OfflineIndicator } from '../../components/OfflineIndicator';
 import { StreakCounter } from '../../components/StreakCounter';
 import { FirstSessionFramingCard } from '../../components/FirstSessionFramingCard';
 import { useStartSession } from '../../components/session/useStartSession';
@@ -62,6 +63,8 @@ export default function Home() {
           </Text>
         </Pressable>
         <View style={styles.headerRight}>
+          {/* S4.3: renders only when offline (null otherwise — no layout shift). */}
+          <OfflineIndicator />
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Settings"

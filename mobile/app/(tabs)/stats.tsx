@@ -18,6 +18,7 @@ import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Text } from '../../components/ui';
+import { OfflineIndicator } from '../../components/OfflineIndicator';
 import { HeroScore } from '../../components/stats/HeroScore';
 import { SummaryCards } from '../../components/stats/SummaryCards';
 import { SessionList } from '../../components/stats/SessionList';
@@ -65,9 +66,11 @@ export default function StatsTab() {
         />
       }
     >
-      <Text variant="title" style={styles.header}>
-        Stats
-      </Text>
+      <View style={styles.headerRow}>
+        <Text variant="title">Stats</Text>
+        {/* S4.3: hidden while online; no layout shift when it appears. */}
+        <OfflineIndicator />
+      </View>
 
       <HeroScore />
 
@@ -100,7 +103,12 @@ export default function StatsTab() {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   content: { paddingHorizontal: 24, gap: 16 },
-  header: { marginBottom: 4 },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
   forecast: {
     borderWidth: 1,
     borderRadius: 8,
