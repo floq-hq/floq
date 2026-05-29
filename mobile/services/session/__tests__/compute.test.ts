@@ -17,15 +17,29 @@ vi.mock('../../../stores/useTaskStore', () => ({
   useTaskStore: { getState: () => ({ tasks: store.tasks }) },
 }));
 
-// compute.ts now sources sessions_today from SQLite (M4.2). Mock the storage
-// barrel so the node env doesn't load expo-sqlite / firebase, and so we can
-// drive the count from the test.
-const sql = vi.hoisted(() => ({ sessionsToday: 0 }));
-vi.mock('../../storage', () => ({
+// compute.ts now sources sessions_today + the last-session ended_at +
+// the last session's break_minutes from SQLite (M4.2 / M4.5 / M4.7). Mock
+// the sessions module so the node env doesn't load expo-sqlite / firebase
+// and so we can drive each value from the test. Includes the M4.7 inputs
+// for the gap-clock / depletion path; default to "no prior session" so the
+// existing pre-M4.7 expectations (focus 51 etc.) round-trip unchanged.
+const sql = vi.hoisted(() => ({
+  sessionsToday: 0,
+  lastEndedAt: null as number | null,
+  recent: [] as Array<{ plan: { breakMinutes: number } }>,
+}));
+vi.mock('../../storage/sessions', () => ({
   countSessionsToday: vi.fn(() => sql.sessionsToday),
+  getLastSessionEndedAt: vi.fn(() => sql.lastEndedAt),
+  getRecentSessions: vi.fn((_n: number) => sql.recent),
 }));
 
-import { hourBucket, buildSessionInputs, computeSessionPlan } from '../compute';
+import {
+  TASK_ESTIMATE_BUFFER,
+  hourBucket,
+  buildSessionInputs,
+  computeSessionPlan,
+} from '../compute';
 
 // A deterministic local Tuesday, 2026-05-26 10:00 (a "morning" time).
 const at = (h: number, m = 0) => new Date(2026, 4, 26, h, m, 0);
@@ -45,7 +59,10 @@ function makeTask(over: Partial<Task> = {}): Task {
     id: 't1',
     title: 'ship the orchestrator',
     difficulty: 5,
-    estMinutes: 30,
+    // Default estMinutes is high enough that the L20 task-estimate cap (1.5×)
+    // never bites in the formula-arithmetic tests below — those isolate the
+    // depletion/clamp behavior. Cap-specific tests override this explicitly.
+    estMinutes: 120,
     order: 0,
     done: false,
     createdAt: 0,
@@ -103,16 +120,22 @@ describe('computeSessionPlan', () => {
     store.answers = answers;
     store.tasks = [makeTask()];
     sql.sessionsToday = 0;
+    sql.lastEndedAt = null;
+    sql.recent = [];
   });
 
   it('round-trips the timer.md worked example: hard task at preferred time → focus 51, break 11, cold', () => {
     // 60 × 1.0 (neutral) × 0.85 (difficulty 5) × 1.0 (morning match) × 1.0 (1st today) = 51
+    // No prior session → recovery_mod = 1.0, depletion_mod = 1.0 (no trim).
     const plan = computeSessionPlan('t1', { now: morning10 });
     expect(plan).toEqual({ focusMinutes: 51, breakMinutes: 11, regime: 'cold' });
   });
 
-  it('sources sessions_today from SQLite when ctx omits it (fatigue applies)', () => {
+  it('sources sessions_today from SQLite when ctx omits it (fatigue applies as depletion floor)', () => {
     sql.sessionsToday = 2; // 3rd session today → fatigue ×0.8
+    // Without a prior session inside the recovery window, recovery_mod = 1.0
+    // → depletion_mod = max(0.75, 0.8 × 1.0) = 0.8 (matches the old fatigue-
+    // only behavior for the first session of a recovery cycle).
     // 60 × 1.0 × 0.85 × 1.0 × 0.8 = 40.8 → floor 40; break floor(40 × 0.22) = 8
     const plan = computeSessionPlan('t1', { now: morning10 });
     expect(plan).toEqual({ focusMinutes: 40, breakMinutes: 8, regime: 'cold' });
@@ -125,6 +148,52 @@ describe('computeSessionPlan', () => {
     expect(plan).toEqual({ focusMinutes: 51, breakMinutes: 11, regime: 'cold' });
   });
 
+  it('M4.7: back-to-back with zero gap trims focus via depletion', () => {
+    // 2nd session today, started immediately after the prior one (gap=0,
+    // recovery_mod=0.85). fatigue=0.9 → product 0.765 (above the 0.75 floor,
+    // so the product wins). Pre-fatigue baseline = 51.
+    // 51 × 0.765 = 39.015 → floor 39; break floor(39 × 0.22) = floor(8.58) = 8.
+    sql.sessionsToday = 1;
+    sql.lastEndedAt = morning10; // gap = 0 minutes
+    sql.recent = [{ plan: { breakMinutes: 11 } }];
+    const plan = computeSessionPlan('t1', { now: morning10 });
+    expect(plan).toEqual({ focusMinutes: 39, breakMinutes: 8, regime: 'cold' });
+  });
+
+  it('M4.7: worst-corner depletion clips to DEPLETION_FLOOR (0.75)', () => {
+    // 3rd+ session today (fatigue=0.8), gap=0 (recovery_mod=0.85) →
+    // raw product 0.68, clipped to 0.75. Pre-fatigue baseline = 51.
+    // 51 × 0.75 = 38.25 → floor 38; break floor(38 × 0.22) = 8.
+    sql.sessionsToday = 2;
+    sql.lastEndedAt = morning10;
+    sql.recent = [{ plan: { breakMinutes: 11 } }];
+    const plan = computeSessionPlan('t1', { now: morning10 });
+    expect(plan).toEqual({ focusMinutes: 38, breakMinutes: 8, regime: 'cold' });
+  });
+
+  it('M4.7: rested fully (gap >= recommended break) yields no recovery penalty', () => {
+    sql.sessionsToday = 0; // back to fatigue 1.0 to isolate the recovery effect
+    sql.lastEndedAt = morning10 - 30 * 60_000; // gap = 30 min, well past any break
+    sql.recent = [{ plan: { breakMinutes: 11 } }];
+    // depletion_mod = max(0.75, 1.0 × 1.0) = 1.0 → no trim, focus = 51.
+    const plan = computeSessionPlan('t1', { now: morning10 });
+    expect(plan).toEqual({ focusMinutes: 51, breakMinutes: 11, regime: 'cold' });
+  });
+
+  it('M4.7: injected ctx.recoveryGapMin + recommendedBreakMin win over storage', () => {
+    sql.lastEndedAt = morning10 - 60 * 60_000; // storage says fully rested
+    sql.recent = [{ plan: { breakMinutes: 11 } }];
+    // Caller pins to gap=0 (just restarted) → recovery_mod = 0.85.
+    // fatigue = 1.0 → depletion = max(0.75, 0.85) = 0.85.
+    // 60 × 1.0 × 0.85 × 1.0 × 0.85 = 43.35 → floor 43; break floor(43 × 0.22) = 9.
+    const plan = computeSessionPlan('t1', {
+      now: morning10,
+      recoveryGapMin: 0,
+      recommendedBreakMin: 11,
+    });
+    expect(plan).toEqual({ focusMinutes: 43, breakMinutes: 9, regime: 'cold' });
+  });
+
   it('throws when the task id is unknown', () => {
     expect(() => computeSessionPlan('nope', { now: morning10 })).toThrow(/no task found/);
   });
@@ -132,5 +201,86 @@ describe('computeSessionPlan', () => {
   it('throws when onboarding answers are missing', () => {
     store.answers = null;
     expect(() => computeSessionPlan('t1', { now: morning10 })).toThrow(/onboarding/);
+  });
+});
+
+// L20 / Bug #6 — task-estimate cap. The cold-start formula recommends focus
+// CAPACITY, not task duration. A 25-min task can land a 72-min suggestion
+// without this cap (real sim test, 2026-05-29). The cap lives outside the
+// frozen formula at the orchestration layer.
+describe('TASK_ESTIMATE_BUFFER constant (drift guard)', () => {
+  it('is exactly 1.5 (decisions.md L20)', () => {
+    // If this asserts and someone "fixed" the value, read L20 — the buffer is
+    // calibrated, not frozen, but a change without spec sign-off is the
+    // forbidden silent drift the test guards against.
+    expect(TASK_ESTIMATE_BUFFER).toBe(1.5);
+  });
+});
+
+describe('computeSessionPlan — task-estimate cap (L20)', () => {
+  beforeEach(() => {
+    store.answers = answers;
+    sql.sessionsToday = 0;
+    sql.lastEndedAt = null;
+    sql.recent = [];
+  });
+
+  it('caps a 25-min task: ceil(25 × 1.5) = 38 → focus ≤ 38 instead of 51', () => {
+    // Without the cap: the worked-example formula gives focus = 51 (60 × 0.85).
+    // With the cap: min(51, ceil(25 × 1.5) = 38) = 38; break floor(38 × 0.22) = 8.
+    store.tasks = [makeTask({ estMinutes: 25 })];
+    const plan = computeSessionPlan('t1', { now: morning10 });
+    expect(plan.focusMinutes).toBe(38);
+    expect(plan.breakMinutes).toBe(8);
+  });
+
+  it('does NOT cap a long task: 4-hr estimate → cap (360) > FOCUS_MAX (90)', () => {
+    // Long task: cap = ceil(240 × 1.5) = 360 → never bites; formula wins.
+    // Worked example: focus = 51, break = 11.
+    store.tasks = [makeTask({ estMinutes: 240 })];
+    const plan = computeSessionPlan('t1', { now: morning10 });
+    expect(plan).toEqual({ focusMinutes: 51, breakMinutes: 11, regime: 'cold' });
+  });
+
+  it('FOCUS_MIN (15) still wins for tiny tasks (5-min estimate)', () => {
+    // 5-min task: cap = ceil(5 × 1.5) = 8 → final = clamp(8, 15, 90) = 15.
+    // The science floor (no flow below 15 min) is intact (timer.md / L20).
+    store.tasks = [makeTask({ estMinutes: 5 })];
+    const plan = computeSessionPlan('t1', { now: morning10 });
+    expect(plan.focusMinutes).toBe(15);
+  });
+
+  it("doesn't cap when the cap >= the formula output (cap stays inert)", () => {
+    // 60-min task: cap = ceil(60 × 1.5) = 90; formula = 51 → cap inert.
+    store.tasks = [makeTask({ estMinutes: 60 })];
+    const plan = computeSessionPlan('t1', { now: morning10 });
+    expect(plan.focusMinutes).toBe(51);
+  });
+
+  it('treats estMinutes = 0 as no-cap so the formula governs (audit Finding #8)', () => {
+    // Without the guard: ceil(0 × 1.5) = 0 → min(focus, 0) = 0 → clamp to
+    // FOCUS_MIN (15). The guard makes the cap Infinity → formula = 51.
+    store.tasks = [makeTask({ estMinutes: 0 })];
+    const plan = computeSessionPlan('t1', { now: morning10 });
+    expect(plan.focusMinutes).toBe(51);
+  });
+
+  it('treats negative estMinutes (corrupted task) as no-cap too', () => {
+    store.tasks = [makeTask({ estMinutes: -10 })];
+    const plan = computeSessionPlan('t1', { now: morning10 });
+    expect(plan.focusMinutes).toBe(51);
+  });
+
+  it('cap bites only when stricter than depletion + clamp combined', () => {
+    // High depletion (3rd today, gap=0): pre-cap formula goes to 38 already.
+    // Cap with 25-min estimate: ceil(25 × 1.5) = 38 → same number → no
+    // visible change but the path is exercised.
+    store.tasks = [makeTask({ estMinutes: 25 })];
+    sql.sessionsToday = 2;
+    sql.lastEndedAt = morning10;
+    sql.recent = [{ plan: { breakMinutes: 11 } }];
+    const plan = computeSessionPlan('t1', { now: morning10 });
+    // depletion alone → 38; cap = 38; min(38, 38) = 38.
+    expect(plan.focusMinutes).toBe(38);
   });
 });

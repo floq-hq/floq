@@ -26,6 +26,8 @@ function makeSession(over: Partial<CompletedSession> = {}): CompletedSession {
     actualFocusMinutes: 50,
     focusScore: 50,
     distractions: [],
+    completed: true,
+    overrunMinutes: 0,
     clientVersion: '1.0.0',
     ...over,
   };

@@ -26,8 +26,18 @@ import { getAllSessionEndedAt } from '../../services/storage/sessions';
 import { statsKeys } from '../../services/stats/useStats';
 import { useTheme } from '../../theme';
 
-/** Cold regime cutoff for the forecast section (shared/spec/ml-regimes.md). */
-const COLD_REGIME_MAX = 7;
+/**
+ * Sessions required to unlock the forecast chart. Per `shared/spec/ml-regimes.md`
+ * §"Performance forecast (Model B — separate from the timer model)":
+ *   0–6 sessions  → forecast hidden, learning badge shown
+ *   7–13 sessions → forecast visible with wide confidence bands
+ *   14+ sessions  → tight bands
+ * Note: this is the FORECAST gate, NOT the regime router cutoff (the timer
+ * regime is cold at <5, warming at <14, mature at ≥14). Different concept,
+ * different number. The previous local name (`FORECAST_MIN_SESSIONS`) conflated
+ * the two — renamed for clarity per audit Finding #15.
+ */
+const FORECAST_MIN_SESSIONS = 7;
 
 export default function StatsTab() {
   const theme = useTheme();
@@ -43,7 +53,7 @@ export default function StatsTab() {
     queryFn: () => getAllSessionEndedAt().length,
   });
 
-  const isColdRegime = totalSessions < COLD_REGIME_MAX;
+  const forecastLocked = totalSessions < FORECAST_MIN_SESSIONS;
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -76,7 +86,7 @@ export default function StatsTab() {
 
       <SummaryCards />
 
-      {isColdRegime && (
+      {forecastLocked && (
         <View style={[styles.forecast, { borderColor: theme.border }]}>
           <Text variant="caption" color={theme.textMuted}>
             Forecast
@@ -85,8 +95,8 @@ export default function StatsTab() {
             We're still learning your rhythm.
           </Text>
           <Text variant="caption" color={theme.textMuted}>
-            {`${COLD_REGIME_MAX - totalSessions} more session${
-              COLD_REGIME_MAX - totalSessions === 1 ? '' : 's'
+            {`${FORECAST_MIN_SESSIONS - totalSessions} more session${
+              FORECAST_MIN_SESSIONS - totalSessions === 1 ? '' : 's'
             } to unlock your forecast.`}
           </Text>
         </View>

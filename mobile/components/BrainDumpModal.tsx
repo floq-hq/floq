@@ -8,7 +8,7 @@
  * on save. parseTasks zod-validates every response (CLAUDE.md), so the parsed
  * rows are always well-formed. Save persists via useTaskStore.addTasks (M2.5).
  */
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -36,7 +36,7 @@ type ParsedRow = ParsedTask & { id: string };
 function noticeFor(reason: ParseFailReason): string {
   switch (reason) {
     case 'rate_limited':
-      return 'We’re a bit busy right now — add a task manually for the moment.';
+      return 'Hit the daily organize limit — add a task manually, or try again in an hour.';
     case 'parse_failed':
       return 'Couldn’t read that into tasks — add one manually.';
     case 'unavailable':
@@ -55,18 +55,29 @@ export function BrainDumpModal({ onClose }: { onClose: () => void }) {
   const [text, setText] = useState('');
   const [parsed, setParsed] = useState<ParsedRow[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
+  // PR4 (audit Finding #7): a busy ref guards against a double-tap on
+  // Organize firing two concurrent parseTasks() calls (the `mode` state
+  // doesn't fully prevent the race — React batches set state). One LLM call
+  // per tap, full stop.
+  const inFlightRef = useRef(false);
 
   async function onOrganize() {
+    if (inFlightRef.current) return;
     const input = text.trim();
     if (!input) return;
+    inFlightRef.current = true;
     setMode('loading');
-    const res = await parseTasks(input, useCase);
-    if (res.ok) {
-      setParsed(res.tasks.map((t, i) => ({ ...t, id: `p${Date.now()}-${i}` })));
-      setMode('review');
-    } else {
-      setNotice(noticeFor(res.reason));
-      setMode('manual');
+    try {
+      const res = await parseTasks(input, useCase);
+      if (res.ok) {
+        setParsed(res.tasks.map((t, i) => ({ ...t, id: `p${Date.now()}-${i}` })));
+        setMode('review');
+      } else {
+        setNotice(noticeFor(res.reason));
+        setMode('manual');
+      }
+    } finally {
+      inFlightRef.current = false;
     }
   }
 

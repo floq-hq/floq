@@ -35,7 +35,7 @@ export default function Home() {
   const hydrate = useTaskStore((s) => s.hydrate);
   const topTask = useTaskStore(selectTopTask);
   const hiddenCount = useTaskStore(selectHiddenCount);
-  const { onStart, launching, showIntro, onIntroDismiss } = useStartSession(topTask);
+  const { onStart, launching, launchError, showIntro, onIntroDismiss } = useStartSession(topTask);
 
   // Load the persisted queue once on first mount (mirrors the onboarding gate).
   useEffect(() => {
@@ -119,6 +119,14 @@ export default function Home() {
       ) : (
         <Button label="Brain-dump" onPress={openBrainDump} />
       )}
+      {/* PR4: surface compute-time failures (onboarding missing / top task
+          disappeared) instead of leaving the button stuck on "launching"
+          forever. Cleared on screen re-focus. */}
+      {launchError ? (
+        <Text variant="caption" color={theme.danger} style={styles.launchError}>
+          {launchError}
+        </Text>
+      ) : null}
 
       <FirstSessionFramingCard visible={showIntro} onDismiss={onIntroDismiss} />
     </View>
@@ -128,11 +136,15 @@ export default function Home() {
 const styles = StyleSheet.create({
   root: { flex: 1, paddingHorizontal: 24 },
   header: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  // PR5 (audit Finding #13): tightened gap so OfflineIndicator + ⚙ + StreakCounter
+  // don't overflow on smaller devices (iPhone SE). flexShrink lets the children
+  // collapse gracefully if the offline pill is wider than the spare width.
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 12, flexShrink: 1 },
   body: { flex: 1, justifyContent: 'center' },
   taskBlock: { gap: 12 },
   pills: { flexDirection: 'row', gap: 8, marginTop: 12 },
   hidden: { textAlign: 'center' },
   empty: { alignItems: 'center', gap: 8 },
   center: { textAlign: 'center' },
+  launchError: { textAlign: 'center', marginTop: 8 },
 });

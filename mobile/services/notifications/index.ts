@@ -119,6 +119,15 @@ export async function scheduleBreakReminder(breakMinutes: number): Promise<void>
   });
 }
 
+/** Cancel any pending break reminder. Called when the user starts a new session
+ *  before the break is over (L17 allows skipping recovery) or when they tap
+ *  Skip recovery — without this, the "Recovery's almost up" notification fires
+ *  mid-session 2. Idempotent: cheap no-op when nothing is scheduled.
+ *  Does NOT prompt for permission — never side-effects on a cancel path. */
+export async function cancelBreakReminder(): Promise<void> {
+  await cancelByKind('break');
+}
+
 /** Schedule (or reschedule) a daily reminder at the user's preferred time-of-day
  *  (onboarding Q3). Optional per S4.2; replaces the previous schedule. Pass
  *  { request: false } from the app-open resync so a launch never prompts. */

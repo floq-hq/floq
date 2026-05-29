@@ -8,8 +8,9 @@
  * The launcher (useStartSession) hands off { taskId, plan } via route params. The plan drives the phase
  * boundaries; the task id resolves the title shown under the clock. On mount the
  * screen opens the in-flight session in the active-session store (M3.2); DONE
- * ends it, writes the record (writeSession, M3.2), promotes the next task
- * (markDone, M2.5), and routes to the summary.
+ * ends it, writes the record via finalizeOnDone (M4.5/M4.6), and routes to the
+ * summary. Task promotion is NOT automatic — the summary screen (Option 7 /
+ * L19) hosts the explicit "Mark task done" affordance.
  *
  * Timing model: a single shared `elapsedSeconds`, advanced on the UI thread by a
  * Reanimated frame callback (no per-second setState) that derives it from the wall
@@ -25,7 +26,7 @@
  * (The on-screen clock and the recorded focus minutes now share the same wall-clock
  * basis — session.startedAt — so they always agree.)
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -40,14 +41,16 @@ import { PhaseIndicator } from '../components/session/PhaseIndicator';
 import { SessionTimer } from '../components/session/SessionTimer';
 import { DistractionButton } from '../components/session/DistractionButton';
 import { SessionToast } from '../components/session/SessionToast';
+import { SuggestedStopMeter } from '../components/session/SuggestedStopMeter';
+import { EndEarlySheet } from '../components/session/EndEarlySheet';
 import { phaseFor, type Phase, type SessionPlan } from '../services/timer';
-import { writeSession } from '../services/session/distraction';
+import { saveCompletedSession } from '../services/storage/sessions';
+import { finalizeOnDone } from '../services/session/finalize';
 import { startBackgroundPolicy } from '../services/session/backgroundPolicy';
 import { backgroundDistractionMessage } from '../services/session/backgroundNotice';
 import { scheduleBreakReminder } from '../services/notifications';
 import { queryClient } from '../services/queryClient';
 import { statsKeys } from '../services/stats/useStats';
-import type { CompletedSession } from '../services/session/types';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useActiveSessionStore } from '../stores/useActiveSessionStore';
 import { useTheme } from '../theme';
@@ -80,10 +83,29 @@ export default function SessionScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ taskId?: string; plan?: string }>();
   const plan = parsePlan(params.plan);
-  const task = useTaskStore((s) => s.tasks.find((t) => t.id === params.taskId));
+  // PR4 (audit Finding #3): if the user deleted the task between starting the
+  // session and the kill, the task store doesn't have the id anymore — the
+  // mount-effect would early-return and the timer would freeze at 00:00
+  // (same symptom as Bug #7, different root cause). Fall back to the
+  // SessionTask snapshot already on the dangling ActiveSession blob, which
+  // is exactly what it was captured for. Reads-only — no queue mutation.
+  const taskFromQueue = useTaskStore((s) => s.tasks.find((t) => t.id === params.taskId));
+  const taskFromActive = useActiveSessionStore((s) =>
+    s.active && s.active.taskId === params.taskId ? s.active.task : null,
+  );
+  const task = taskFromQueue
+    ? taskFromQueue
+    : taskFromActive
+      ? {
+          // Reshape SessionTask → the minimal Task fields the screen reads.
+          id: params.taskId ?? '',
+          title: taskFromActive.title,
+          difficulty: taskFromActive.difficulty,
+          estMinutes: taskFromActive.estMinutes,
+        }
+      : null;
   const startSession = useActiveSessionStore((s) => s.startSession);
   const endSession = useActiveSessionStore((s) => s.endSession);
-  const markDone = useTaskStore((s) => s.markDone);
 
   const elapsedSeconds = useSharedValue(0);
   // Wall-clock anchor (session.startedAt). The clock is derived as (now - anchor)
@@ -96,6 +118,10 @@ export default function SessionScreen() {
   // second background episode re-triggers the toast even if the wording matches.
   const [bgNotice, setBgNotice] = useState<{ text: string; key: number } | null>(null);
   const dismissNotice = useCallback(() => setBgNotice(null), []);
+
+  // End-early sheet (M4.8). Opened by the understated "End early" affordance
+  // alongside DONE — kept visually subordinate so it never reads as DONE.
+  const [endEarlyOpen, setEndEarlyOpen] = useState(false);
 
   // Advance the clock on the UI thread (no per-second setState). Derived purely
   // from the wall clock and the session's startedAt, so it's a stable function of
@@ -126,23 +152,37 @@ export default function SessionScreen() {
 
   // Begin — or RESUME — the in-flight session in the active-session store (M3.2)
   // so the distraction button (S3.2) and the Done writer (S3.3) have a session to
-  // act on. If one already exists for this task (the screen remounted after a
-  // background), resume it: never start a fresh session that would reset the clock
-  // or wipe distractions already logged (incl. background ones from M3.4). Either
-  // way, seed the wall-clock anchor from the session's startedAt.
+  // act on.
+  //
+  // Bug #7 (PR3) — the deps array MUST react to `task?.id`. On a Resume from
+  // the RestoreSessionPrompt, the screen mounts BEFORE the task store has
+  // hydrated (Resume routes straight to /focus without going through Home,
+  // which used to be the only hydrate trigger). The original `[]`-deps effect
+  // returned early on the first render with no task and never re-fired — so
+  // `startedAtMs.value` stayed at 0 and the useFrameCallback gated the clock
+  // off. The ref guard keeps a second startSession from firing when the task
+  // store hydrates AFTER an existing-session match.
+  const sessionInitialized = useRef(false);
   useEffect(() => {
+    if (sessionInitialized.current) return;
     if (!plan || !task) return;
     const existing = useActiveSessionStore.getState().active;
-    if (!existing || existing.taskId !== task.id) {
+    if (existing && existing.taskId === task.id) {
+      // Resume: an in-flight session for this task already lives in the store
+      // (hydrated at boot in app/index.tsx). Seed the wall-clock anchor from
+      // its startedAt — never overwrite it (that's how the original elapsed
+      // time and any distractions logged before the kill survive).
+      startedAtMs.value = existing.startedAt;
+    } else {
       startSession({
         taskId: task.id,
         task: { title: task.title, difficulty: task.difficulty, estMinutes: task.estMinutes },
         plan,
       });
+      startedAtMs.value = useActiveSessionStore.getState().active?.startedAt ?? Date.now();
     }
-    startedAtMs.value = useActiveSessionStore.getState().active?.startedAt ?? Date.now();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
-  }, []);
+    sessionInitialized.current = true;
+  }, [plan, task?.id, startSession, startedAtMs]);
 
   // Background-during-session policy (M3.4): while this screen is mounted, watch
   // AppState. If the app is backgrounded past the user's threshold (decisions.md
@@ -156,7 +196,13 @@ export default function SessionScreen() {
     return stop;
   }, []);
 
-  // DONE: end the session, persist it, promote the next task, show the summary.
+  // DONE: end the session, persist it, show the summary.
+  //
+  // PR3 / L19: task promotion is **no longer automatic here**. The summary
+  // screen now hosts the explicit "Mark task done" affordance — finishing a
+  // session does not mean the task is done (a 4-hour task with 70-min
+  // recommended sessions was being silently consumed). Default keeps the
+  // task; the user marks complete on the summary when they actually are.
   const onDone = useCallback(() => {
     const snapshot = endSession(); // returns the in-flight session, then clears it
     if (!snapshot) {
@@ -164,37 +210,13 @@ export default function SessionScreen() {
       return;
     }
 
-    const endedAt = Date.now();
-    // Wall-clock from the store's startedAt (M3.2) — not the frame clock, which
-    // pauses while backgrounded — so the recorded minutes aren't undercounted.
-    const minutesFocused = Math.max(0, Math.round((endedAt - snapshot.startedAt) / 60_000));
-    const distractions = snapshot.distractions.length;
-
-    // Focus score is M4.1 — a frozen formula in Mohamed's timer service that isn't
-    // merged yet, and we must not reimplement it. No real score to compute: write 0
-    // as a placeholder and show "—" in the summary. One-line swap to
-    // computeFocusScore(...) the moment M4.1 lands.
-    const focusScore: number | null = null;
-
-    const completed: CompletedSession = {
-      id: snapshot.sessionId,
-      taskId: snapshot.taskId,
-      task: snapshot.task,
-      plan: snapshot.plan,
-      startedAt: snapshot.startedAt,
-      endedAt,
-      actualFocusMinutes: minutesFocused,
-      focusScore: focusScore ?? 0,
-      distractions: snapshot.distractions,
-      clientVersion: CLIENT_VERSION,
-    };
-
-    // Best-effort write via Mohamed's persistence layer (M3.2). Don't block the
-    // hand-off to the summary on the network, and don't lose the rest of the flow
-    // if it fails (offline / signed-out) — SQLite becomes the source of truth in M4.2.
-    writeSession(completed).catch((err) => {
-      if (__DEV__) console.warn('[session] writeSession failed', err);
-    });
+    // M4.5 / M4.6: assembly + focus score + overrun + recomputed break all
+    // come from one place (services/session/finalize). Local truth is SQLite
+    // via saveCompletedSession; the Firestore mirror is fired async with the
+    // failure swallowed (offline / signed-out is fine — SQLite already holds
+    // the truth).
+    const completed = finalizeOnDone(snapshot, Date.now(), CLIENT_VERSION);
+    saveCompletedSession(completed);
 
     // Refresh the Stats screen immediately (S4.1 wiring of M4.3 handoff). Without
     // this the just-completed session wouldn't show up until staleTime (30s).
@@ -202,24 +224,24 @@ export default function SessionScreen() {
 
     // End-of-break nudge (S4.2). Fire-and-forget; prompts for notification
     // permission on first use (a session just ended — a deliberate action, not
-    // app open). Silent no-op if permission is denied. NOTE: when M4.8/M4.9 land
-    // the session-end rework, this call moves with the DONE/end-early branch.
-    void scheduleBreakReminder(snapshot.plan.breakMinutes);
-
-    // Task promotion (session-flow.md §Task promotion): drop the current task; the
-    // next auto-promotes, or an empty queue shows Home's brain-dump prompt.
-    markDone(snapshot.taskId);
+    // app open). Silent no-op if permission is denied. PR3: useStartSession +
+    // /recovery's Skip both cancel this so it never fires mid-Session 2.
+    void scheduleBreakReminder(completed.plan.breakMinutes);
 
     router.replace({
       pathname: '/session-summary',
       params: {
-        minutes: String(minutesFocused),
-        distractions: String(distractions),
-        breakMinutes: String(snapshot.plan.breakMinutes),
-        ...(focusScore != null ? { score: String(focusScore) } : {}),
+        minutes: String(completed.actualFocusMinutes),
+        distractions: String(completed.distractions.length),
+        breakMinutes: String(completed.plan.breakMinutes),
+        score: String(completed.focusScore),
+        // PR3: pass the task identity through so the summary can render the
+        // "Mark task done" affordance for THIS task.
+        taskId: snapshot.taskId,
+        taskTitle: snapshot.task.title,
       },
     });
-  }, [endSession, markDone]);
+  }, [endSession]);
 
   // Defensive: S3.0 always passes a plan, but a stray deep link shouldn't crash.
   if (!plan) {
@@ -250,12 +272,31 @@ export default function SessionScreen() {
             {task.title}
           </Text>
         ) : null}
+        {/* M4.9 / L16: suggested-stop progress + overrun affordance. NOT a phase
+            pill flip — phases.ts stays "Flow" past the suggestion (frozen). */}
+        <SuggestedStopMeter
+          elapsedSeconds={elapsedSeconds}
+          plannedFocusMinutes={plan.focusMinutes}
+        />
       </View>
 
       <View style={styles.controls}>
         <DistractionButton />
         <Button label="DONE" onPress={onDone} />
+        {/* M4.8 / L16: understated end-early — visually subordinate to DONE,
+            never reads as the success path. Opens the Save/Discard sheet. */}
+        <Button
+          label="End early"
+          variant="ghost"
+          size="md"
+          onPress={() => setEndEarlyOpen(true)}
+        />
       </View>
+
+      <EndEarlySheet
+        visible={endEarlyOpen}
+        onDismiss={() => setEndEarlyOpen(false)}
+      />
 
       <SessionToast
         message={bgNotice?.text ?? null}

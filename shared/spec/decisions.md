@@ -280,6 +280,86 @@ The DONE-vs-end-early distinction is the user's **intent**, not the elapsed time
 
 **This is planning, not progress.** It reshapes W5–W8, but the immediate next action is unchanged: **close W4, then get the product in front of real users.** A written spec is not traction.
 
+### L19 — DONE doesn't auto-promote the task; task completion is explicit
+
+**Date locked:** 2026-05-29
+**Decision:** Tapping DONE on `/focus` ends the session — writes the record, computes the focus score, recommends recovery — but **does NOT remove the task from the queue**. Task promotion (`markDone`) is an **explicit user action** that happens via the *Mark task done* affordance on the post-session summary (the best moment for the decision: post-flow, when the user has perspective) or via queue management on Home. Supersedes the original `session-flow.md` §Task promotion ("Done → promote next").
+
+**Why (the gap this closes):** the original spec assumed DONE-on-session = DONE-on-task. That is correct only for **single-session tasks**. For any substantial task — the kind a focus app exists for — DONE silently consumed the queue: a 4-hour task with 70-min recommended sessions would be erased the first time the user tapped DONE, leaving no record of "still to do." End-early → Save was the wrong tool (skips recovery, treats the session as an interrupted attempt). The user had no clean path for "I focused well, the task isn't done yet" — which is the **normal** path for most real work.
+
+**The recovery screen is the right surface, not `/focus` or the summary:**
+- Mid-flow (on `/focus`) is the wrong moment to ask "is the task done?" — the user just punched out of focus and wants the timer to end.
+- The summary is too brief — early sim testing (2026-05-29) showed the 5–8s auto-dismiss left no time for any tap; the user couldn't act before it disappeared. Putting the decision there was a UX dead end.
+- The recovery screen has **minutes** of dwell (5–25 min recomputed break). The user is cooling down, has the countdown in front of them, and has both the perspective AND the time to assess whether the task is actually finished.
+- The default is **task stays** — auto-route, Skip recovery, tap anything-else all preserve the task. Marking complete is a deliberate single tap on the explicit affordance.
+
+**End-early Save / Discard never auto-promote** (unchanged, L16). So all three end paths now agree: nothing auto-`markDone`s the task; the user is the only one who decides "this task is done."
+
+**Implementation:** PR3 (post-#120/#121). Files: `mobile/app/focus.tsx` (remove `markDone` from `onDone`), `mobile/app/recovery.tsx` (the *Mark task done* affordance — `Button variant="secondary" size="md"`, shown only when the just-finished task is still in the queue). `mobile/app/session-summary.tsx` forwards `taskId` + `taskTitle` to the recovery route. The spec changes are in `session-flow.md` §Task promotion + §Session-end summary + §Recovery screen + the flow diagram.
+
+### L20 — Task-estimate cap on the session recommendation
+
+**Date locked:** 2026-05-29
+**Decision:** The session recommendation in `computeSessionPlan` is capped at `ceil(task.estimated_minutes × 1.5)` after the depletion mod (M4.7) and before the final 15/90 clamp. The cap lives in the **orchestration layer** (`services/session/compute.ts`), NOT inside `coldStart.ts`. The frozen formula + its constants are unchanged; the 15-min lower clamp still wins for tiny tasks.
+
+**`TASK_ESTIMATE_BUFFER = 1.5`** — calibrated, not frozen. Revisit upward / downward with real beta data.
+
+**Why (the gap this closes):** the cold-start formula recommends **focus capacity** (`base_focus × distraction × difficulty × time × fatigue`). It does not read `task.estimated_minutes` — the input is listed in `timer.md` but never consumed. So a 25-min easy task can produce a 72-min "Suggested stop" (math identity: `base × 1.0 × 1.0 × 0.85 × 1.0 = 0.85 × base`), leaving the user with ~50 min of overrun and no actual work to do (real sim test, 2026-05-29). Two different tasks (easy 25-min, hard 50-min) both landing on 72 min is a math identity (`0.85` appears in both `difficulty_mod` for hard and `time_match_mod` for off-bucket) — not a formula bug, but a real UX failure.
+
+**Mechanics:**
+- `task_cap = ceil(task.estimated_minutes × 1.5)`
+- `capped = min(formula_focus, task_cap)`
+- `final = clamp(capped, 15, 90)` — FOCUS_MIN/MAX still win at the extremes
+- Recovery break recomputed from the (capped) focus via the existing `BREAK_RATIO/BREAK_MIN/BREAK_MAX` — no separate break cap needed.
+
+**Why 1.5 (the buffer):** the planning-fallacy literature supports a 1.2–1.5 slack on self-reported estimates; LLM estimates have similar noise. Tighter (1.2) bites earlier and reads as "I have to finish in exactly the estimate," which is the wrong mental model. Looser (2.0) lets the 72-min-on-25-min case through. 1.5 splits the difference and is consistent with the other soft / calibrated constants (RECOVERY_FLOOR 0.85, DEPLETION_FLOOR 0.75).
+
+**Why NOT inside `coldStart.ts`:** the safety rule on coldStart freezes the formula structure + constants. The cap is a separate constraint applied OUTSIDE the frozen formula at the orchestration layer — same pattern as M4.7's `depletion_mod` (L17).
+
+**Implementation:** PR3. `mobile/services/session/compute.ts` adds `export const TASK_ESTIMATE_BUFFER = 1.5` + the cap step. The dev-mode `console.log` shows `taskCap` + `capBites` so the cap is observable. Tests cover: short task caps, long task doesn't cap, the FOCUS_MIN floor wins below 10 estimated minutes, the buffer constant doesn't silently drift.
+
+### L21 — Skip recovery for sub-5-min DONEs
+
+**Date locked:** 2026-05-29
+**Decision:** When `actualFocusMinutes < MIN_FOCUS_FOR_RECOVERY` (= **5**), `recoveryBreakMinutes` returns **0** instead of clamping to BREAK_MIN. The session-summary screen reads 0 as "skip recovery" and routes the user straight to Home (reusing the PR4 #6 `breakMinutes <= 0` bail in `/recovery`).
+
+**`MIN_FOCUS_FOR_RECOVERY = 5`** — calibrated, not frozen. Lives in `services/session/overrun.ts` (the orchestration layer), NOT inside `coldStart.ts`. The frozen 5/25 break clamps are unchanged.
+
+**Why (the gap this closes):** the cold-start break formula `clamp(round(actual × 0.22), 5, 25)` was designed assuming the user actually did real focus work (`actualFocusMinutes ≥ FOCUS_MIN = 15`). Below that, the 5-min lower clamp dominates the proportional logic: a 3-min DONE earned the same 5-min mandated break as a 22-min DONE. That's a 167% break ratio for the 3-min case — break larger than the focus itself — and the recovery screen would dwell on a 5-min countdown for a user who barely worked. By the science the 5-min floor is "minimum useful cognitive recovery" — but cognitive recovery only matters if the user expended cognitive resources, which a 3-min session didn't.
+
+**Decision matrix considered:**
+- (a) Skip recovery for `actual < 5` → no break. **Chosen.**
+- (b) Skip for `actual < 10` → tighter cutoff; rejected as too aggressive (10-min focus is light but legitimate).
+- (c) Skip for `actual < FOCUS_MIN (15)` → matches the science floor exactly but rejected as too loud (a 12-min focus shouldn't read as "didn't count").
+- (d) Make BREAK_MIN dynamic → changes the frozen formula, rejected.
+- (e) Keep current behavior + add an explainer caption → kept the 5-min mandated break, which is the UX symptom we're solving.
+
+5 min was picked because (a) it matches BREAK_MIN itself (you can't have a break shorter than the floor anyway), and (b) below 5 min of focus the user clearly aborted or did a trivial task — no real recovery needed.
+
+**Mechanics:** `recoveryBreakMinutes(actual)` returns 0 when `actual < 5`, otherwise the L16 formula. The 0 sentinel propagates:
+- `finalizeOnDone` stores it in `plan.breakMinutes` on the SQLite row (and Firestore mirror).
+- `session-summary` checks `breakMinutes <= 0` and routes to `/home` instead of `/recovery`.
+- `/recovery` keeps its own `breakMinutes <= 0` bail (PR4 #6) as defense in depth.
+- M4.7 `recoveryMod` reads `prevBreak = 0` for the next session → returns 1.0 (no penalty), correctly: there was no break to skip because no break was recommended.
+
+**Why NOT inside `coldStart.ts`:** the safety rule freezes the formula + constants. The threshold is a separate gate; same pattern as L17's `recovery_mod` and L20's task-estimate cap — orchestration-layer constraints applied OUTSIDE the frozen formula.
+
+**Implementation:** PR5. `mobile/services/session/overrun.ts` adds `export const MIN_FOCUS_FOR_RECOVERY = 5` + the bail. `mobile/app/session-summary.tsx` adds the early-route-to-home on `breakMinutes <= 0`. Tests cover: 0/3/4 min → 0 break; 5/10/20 min → BREAK_MIN floor still wins; `finalizeOnDone` round-trips both branches.
+
+### L22 — Streak follows device local time (resolves O6)
+
+**Date locked:** 2026-05-29
+**Decision:** The day-bucket for the streak (and for `countSessionsToday` / the M4.7 gap clock) is **device local time at session-end time**. No server-side time, no UTC normalization, no per-user time-zone field. Already implemented this way in `services/stats/aggregations.ts#currentStreak` (M4.4) and `services/storage/sessions.ts#countSessionsToday` (M3.3 fatigue input) — this locks the existing behavior and closes O6 by ratifying the default.
+
+**Why (and why not the alternatives):**
+- **Travel across time zones may feel odd.** A user who flies east loses a day-bucket boundary; flying west could "double-count" if a session ends both before and after the local midnight shifts. Accepted for MVP because (a) the user base in W8 beta is small and mostly stationary, and (b) the alternative — picking a "home" time zone or syncing via Firestore — adds complexity that's hard to make right and easy to make wrong (e.g. what's the right behavior for a user who actually moves to a new city?).
+- **UTC** would be predictable but feel even weirder — a session at 10pm in New York might land in a different streak day than a session at 11pm because of the UTC midnight rollover. Worse UX than the current behavior.
+- **A "streak grace period"** (allow a streak to survive one missed local-calendar day) is the natural post-MVP refinement if real users complain. Cheap to add later; not in MVP because it changes the semantic of "consecutive."
+
+**Implementation:** already shipped — `aggregations.ts#currentStreak` uses `Date.setHours(0,0,0,0)` for the day bucket; `countSessionsToday` uses the same midnight construction; the M4.7 gap clock reads `Date.now()` for the current side and the stored epoch-ms `ended_at` for the prior side. No new code; this is a spec close.
+
+**Revisit:** if beta feedback flags travel weirdness — add a one-day grace period (the cheapest fix) before considering per-user time-zone fields.
+
 ---
 
 ## Open decisions — must resolve by end of W1
@@ -306,12 +386,9 @@ Moved to Locked — see **L15**. Outcome: a **user-configurable setting** (`forg
 
 Superseded by **L18** (social-as-core pivot). The social graph is no longer an n:n friend graph — it's the **1:1 partner edge** (`partnerships/{pairId}`, sorted-UID doc). The original (a)/(b) options are moot. Partner-edge schema + security rules are specced in the new partnership M-task (`tasks.md`, W7 Phase A); the old friend-graph framing is retained in the superseded W7 tasks for the L18 revert path.
 
-### O6 — Streak across time-zone change
+### O6 — Streak across time-zone change ✅ RESOLVED (2026-05-29)
 
-**Must resolve by:** End of W4
-**Default:** Streak follows device local time. May feel odd to frequent travelers; acceptable for MVP.
-**Owner:** Mohamed
-**Notes:** Revisit post-MVP. May need a "streak grace period" if users complain.
+Moved to Locked — see **L22**. Outcome: streak follows **device local time** (the default option). Acceptable for MVP; post-MVP "grace period" revisit only if travelers complain.
 
 ### O7 — Skippable break / enforced-recovery override ✅ RESOLVED (2026-05-27)
 

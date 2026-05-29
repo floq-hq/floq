@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { ActiveSession } from '../../services/session/types';
+import type { ActiveSession, CompletedSession } from '../../services/session/types';
 import type { StartSessionInput } from '../useActiveSessionStore';
 
 // Mock the persist module as spies (the I/O boundary) so the store's wiring is
@@ -16,6 +16,15 @@ vi.mock('../../services/session/activeSessionPersist', () => ({
   loadActiveSession,
   clearActiveSession,
 }));
+
+// Mock the SQLite session-write surface so the M4.5 abandonSession path is
+// testable without expo-sqlite / firebase. Pure-side modules (finalize, overrun,
+// focusScore) are not mocked — those are pure functions and we want their real
+// math in the spy's payload.
+const { saveCompletedSession } = vi.hoisted(() => ({
+  saveCompletedSession: vi.fn<(s: CompletedSession) => void>(),
+}));
+vi.mock('../../services/storage/sessions', () => ({ saveCompletedSession }));
 
 import { useActiveSessionStore } from '../useActiveSessionStore';
 
@@ -102,5 +111,50 @@ describe('hydrate', () => {
     useActiveSessionStore.getState().hydrate();
     expect(useActiveSessionStore.getState().active).toEqual(stored);
     expect(useActiveSessionStore.getState().hydrated).toBe(true);
+  });
+});
+
+describe('abandonSession (M4.5 / L16)', () => {
+  it('writes a completed:false partial with a real focus score, clears active', () => {
+    const s = useActiveSessionStore.getState();
+    // Start a session in the past so finalizeOnAbandon computes non-zero focus.
+    const startedAt = Date.now() - 20 * 60_000;
+    s.startSession(input);
+    useActiveSessionStore.setState({
+      active: { ...useActiveSessionStore.getState().active!, startedAt },
+    });
+    s.logDistraction(startedAt + 5 * 60_000);
+
+    const partial = s.abandonSession();
+    expect(partial).not.toBeNull();
+    expect(partial!.completed).toBe(false);
+    expect(partial!.actualFocusMinutes).toBeGreaterThan(0);
+    // Pure focus-score formula ran on the real distraction count.
+    expect(partial!.distractions).toHaveLength(1);
+    expect(saveCompletedSession).toHaveBeenCalledWith(partial);
+    expect(useActiveSessionStore.getState().active).toBeNull();
+    expect(clearActiveSession).toHaveBeenCalled();
+  });
+
+  it('no-ops (no write, no throw) when no session is in flight', () => {
+    const partial = useActiveSessionStore.getState().abandonSession();
+    expect(partial).toBeNull();
+    expect(saveCompletedSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('getRestorableSession (M4.5)', () => {
+  it('returns whatever loadActiveSession returns (safe pre-hydration)', () => {
+    const dangling: ActiveSession = {
+      sessionId: 'dangling',
+      taskId: 't1',
+      task: input.task,
+      plan: input.plan,
+      startedAt: 1000,
+      currentPhase: 'flow',
+      distractions: [],
+    };
+    loadActiveSession.mockReturnValue(dangling);
+    expect(useActiveSessionStore.getState().getRestorableSession()).toEqual(dangling);
   });
 });

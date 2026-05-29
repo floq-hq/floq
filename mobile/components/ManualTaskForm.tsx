@@ -40,6 +40,10 @@ export function ManualTaskForm({
         onChangeText={setTitle}
         autoFocus
         returnKeyType="done"
+        // PR5 (audit Finding #22): clamp at 200 to match the LLM schema's
+        // zod max — prevents paste-bombs and keeps stored titles within
+        // what every UI surface (Home, Stats, summary) can render.
+        maxLength={200}
       />
 
       <View style={styles.field}>

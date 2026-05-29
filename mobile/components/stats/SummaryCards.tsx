@@ -2,6 +2,11 @@
  * Summary cards (S4.1) — three small cards under the hero score: current
  * streak, personal best, distraction rate (M4.3 / M4.4). `null` from a hook
  * renders an em-dash so an empty week / new user doesn't read as a real zero.
+ *
+ * PR5 cleanup (audit Finding #9): streak reads the integer; "days" plural
+ * unit picks "day" vs "days" so the surface matches Home's StreakCounter.
+ * (audit Finding #14): distraction rate now rounds to 0 decimals — same
+ * precision as score, so the three cards read uniformly.
  */
 import { StyleSheet, View } from 'react-native';
 import { Card, Text } from '../ui';
@@ -19,9 +24,16 @@ export function SummaryCards() {
   const { data: best } = usePersonalBest();
   const { data: rate } = useDistractionRate();
 
+  const streakValue = streak ?? 0;
+
   return (
     <View style={styles.row}>
-      <SummaryCard theme={theme} label="Streak" value={String(streak ?? 0)} unit="days" />
+      <SummaryCard
+        theme={theme}
+        label="Streak"
+        value={String(streakValue)}
+        unit={streakValue === 1 ? 'day' : 'days'}
+      />
       <SummaryCard
         theme={theme}
         label="Personal best"
@@ -31,7 +43,7 @@ export function SummaryCards() {
       <SummaryCard
         theme={theme}
         label="Distractions"
-        value={rate == null ? '—' : rate.toFixed(1)}
+        value={rate == null ? '—' : String(Math.round(rate))}
         unit="per hour"
       />
     </View>
@@ -50,7 +62,11 @@ function SummaryCard({
   unit: string;
 }) {
   return (
-    <Card style={styles.card}>
+    <Card
+      style={styles.card}
+      accessibilityRole="summary"
+      accessibilityLabel={`${label}: ${value} ${unit}`}
+    >
       <Text variant="caption" color={theme.textMuted}>
         {label}
       </Text>

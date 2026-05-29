@@ -38,6 +38,8 @@ function completed(distractions: number[] = [10, 20, 30]): CompletedSession {
     actualFocusMinutes: 48,
     focusScore: -9,
     distractions,
+    completed: true,
+    overrunMinutes: 0,
     clientVersion: '1.0.0',
   };
 }

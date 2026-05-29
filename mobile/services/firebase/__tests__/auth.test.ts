@@ -18,6 +18,13 @@ const h = vi.hoisted(() => {
     credential: vi.fn((token: string) => ({ __cred: token })),
     ensureUserDoc: vi.fn(),
     reset: vi.fn(),
+    // PR4: signOut now resets every user-scoped store + clears the
+    // TanStack cache. Each store gets its own spy so we can assert all
+    // four are wiped.
+    resetTasks: vi.fn(),
+    resetSettings: vi.fn(),
+    resetActive: vi.fn(),
+    queryClientClear: vi.fn(),
     gConfigure: vi.fn(),
     gHasPlay: vi.fn(),
     gSignIn: vi.fn(),
@@ -33,6 +40,18 @@ vi.mock('../init', () => ({ app: {} }));
 vi.mock('../userDoc', () => ({ ensureUserDoc: h.ensureUserDoc }));
 vi.mock('../../../stores/useOnboardingStore', () => ({
   useOnboardingStore: { getState: () => ({ reset: h.reset }) },
+}));
+vi.mock('../../../stores/useTaskStore', () => ({
+  useTaskStore: { getState: () => ({ reset: h.resetTasks }) },
+}));
+vi.mock('../../../stores/useSettingsStore', () => ({
+  useSettingsStore: { getState: () => ({ reset: h.resetSettings }) },
+}));
+vi.mock('../../../stores/useActiveSessionStore', () => ({
+  useActiveSessionStore: { getState: () => ({ reset: h.resetActive }) },
+}));
+vi.mock('../../queryClient', () => ({
+  queryClient: { clear: h.queryClientClear },
 }));
 vi.mock('firebase/auth', () => ({
   initializeAuth: h.initializeAuth,
@@ -133,7 +152,7 @@ describe('signInWithGoogle', () => {
 });
 
 describe('signOut', () => {
-  it('signs out of Firebase + Google and clears the onboarding store', async () => {
+  it('signs out of Firebase + Google and wipes every user-scoped store + the TanStack cache', async () => {
     h.fbSignOut.mockResolvedValue(undefined);
     h.gSignOut.mockResolvedValue(undefined);
 
@@ -141,16 +160,27 @@ describe('signOut', () => {
 
     expect(h.fbSignOut).toHaveBeenCalledWith(auth);
     expect(h.gSignOut).toHaveBeenCalledTimes(1);
+    // PR4 (audit Finding #1) — the multi-store teardown. Each spy was a
+    // separate bug pre-fix: User A's tasks / settings / dangling session /
+    // cached stats would survive to User B's first screens.
     expect(h.reset).toHaveBeenCalledTimes(1);
+    expect(h.resetTasks).toHaveBeenCalledTimes(1);
+    expect(h.resetSettings).toHaveBeenCalledTimes(1);
+    expect(h.resetActive).toHaveBeenCalledTimes(1);
+    expect(h.queryClientClear).toHaveBeenCalledTimes(1);
   });
 
-  it('still clears local state even if the Google revoke fails (non-Google session)', async () => {
+  it('still wipes local state even if the Google revoke fails (non-Google session)', async () => {
     h.fbSignOut.mockResolvedValue(undefined);
     h.gSignOut.mockRejectedValue(new Error('no google session'));
 
     await signOut();
 
     expect(h.reset).toHaveBeenCalledTimes(1);
+    expect(h.resetTasks).toHaveBeenCalledTimes(1);
+    expect(h.resetSettings).toHaveBeenCalledTimes(1);
+    expect(h.resetActive).toHaveBeenCalledTimes(1);
+    expect(h.queryClientClear).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -17,6 +17,7 @@ import { useEffect } from 'react';
 import { StyleSheet } from 'react-native';
 import Animated, {
   Easing,
+  cancelAnimation,
   interpolateColor,
   useAnimatedStyle,
   useSharedValue,
@@ -54,6 +55,12 @@ export function PhaseIndicator({ phase }: { phase: Phase }) {
 
   const progress = useSharedValue(PHASE_LANE[phase]);
   useEffect(() => {
+    // PR5 (audit Finding #21): cancel any in-flight tween before starting a
+    // new one. A rapid phase sequence (struggle → release → flow) would
+    // otherwise queue three 800ms tweens back-to-back and the pill would
+    // visually lag the real phase by 2.4s. cancelAnimation snaps to the
+    // current interpolation point; the new withTiming continues from there.
+    cancelAnimation(progress);
     // Drive the 800ms easeInOut color shift when the phase changes (design-system.md).
     progress.value = withTiming(PHASE_LANE[phase], { duration: 800, easing: Easing.inOut(Easing.ease) });
   }, [phase, progress]);

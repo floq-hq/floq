@@ -5,16 +5,22 @@
 // rules in the root CLAUDE.md. Do not change a value without a citation
 // and sign-off in decisions.md.
 //
+// EXPORT-ONLY LIFT (L16 / L17, 2026-05-29): the focus/break clamp + ratio
+// constants are now `export const`. **No value change.** Lifted so the M4.6
+// recovery-break recompute (`services/session/overrun.ts`) and the M4.7
+// post-router clamp (`services/session/compute.ts`) reuse the exact frozen
+// numbers — defining them twice is the drift this guards against.
+//
 // No React, no I/O — this module must be unit-testable in plain Node.
 
 import type { DistractionLevel, SessionPlan, TimerInputs } from './types';
 
 // --- Frozen constants (science.md) ---
-const BREAK_RATIO = 0.22; // 90/20 ultradian derivative
-const FOCUS_MIN = 15; // below this, no flow possible
-const FOCUS_MAX = 90; // ultradian upper bound
-const BREAK_MIN = 5; // minimum useful recovery
-const BREAK_MAX = 25; // beyond this, momentum lost
+export const BREAK_RATIO = 0.22; // 90/20 ultradian derivative
+export const FOCUS_MIN = 15; // below this, no flow possible
+export const FOCUS_MAX = 90; // ultradian upper bound
+export const BREAK_MIN = 5; // minimum useful recovery
+export const BREAK_MAX = 25; // beyond this, momentum lost
 
 // Q2 self-report → distraction modifier.
 const DISTRACTION_MOD: Record<DistractionLevel, number> = {
@@ -34,7 +40,9 @@ const TIME_MISMATCH_MOD = 0.85;
 
 // Cognitive fatigue across sessions in the same day. `sessions_today` is the
 // count of sessions already completed today (0-indexed): 0 = this is the 1st.
-function fatigueMod(sessionsToday: number): number {
+// EXPORT-ONLY LIFT (L17, 2026-05-29): reused by `services/session/compute.ts`
+// to combine with `recovery_mod` (decisions.md L17 / M4.7). No value change.
+export function fatigueMod(sessionsToday: number): number {
   if (sessionsToday <= 0) return 1.0; // 1st today
   if (sessionsToday === 1) return 0.9; // 2nd today
   return 0.8; // 3rd+ today

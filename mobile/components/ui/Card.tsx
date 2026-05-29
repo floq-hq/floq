@@ -6,20 +6,20 @@
  * permits, and only for floating surfaces like modals:
  *   shadowOpacity 0.05, shadowRadius 12, shadowOffset { 0, 2 }.
  */
-import { View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
+import { View, StyleSheet, type ViewProps } from 'react-native';
 import type { ReactNode } from 'react';
 import { useTheme } from '../../theme';
 
-export type CardProps = {
+export type CardProps = ViewProps & {
   children: ReactNode;
   elevated?: boolean;
-  style?: StyleProp<ViewStyle>;
 };
 
-export function Card({ children, elevated = false, style }: CardProps) {
+export function Card({ children, elevated = false, style, ...rest }: CardProps) {
   const theme = useTheme();
   return (
     <View
+      {...rest}
       style={[
         styles.base,
         { backgroundColor: theme.bgElevated, borderColor: theme.border },
