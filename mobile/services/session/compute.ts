@@ -33,6 +33,7 @@ import type {
 } from '../timer';
 import { routeSessionPlan } from '../ml/regimeRouter';
 import { matureInfer } from '../ml/matureInfer';
+import { encodeFeatures } from '../ml/featureVector';
 import { toOnboardingSeed } from '../onboarding/seed';
 import type { OnboardingAnswers } from '../onboarding/types';
 import type { Task } from '../tasks';
@@ -237,6 +238,10 @@ export function computeSessionPlan(
     focusMinutes: adjustedFocus,
     breakMinutes: adjustedBreak,
     regime: baseline.regime,
+    // L23: capture the model's input vector for the local training outbox.
+    // Encode the REAL context (full `inputs`, real sessions_today) — that's what
+    // a v2 model conditions on, not the no-fatigue baseline used for routing.
+    features: Array.from(encodeFeatures(inputs)),
   };
 
   if (typeof __DEV__ !== 'undefined' && __DEV__) {

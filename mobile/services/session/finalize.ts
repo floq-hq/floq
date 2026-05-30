@@ -47,6 +47,9 @@ function assemble(
       focusMinutes: planned,
       breakMinutes: recomputedBreak,
       regime: active.plan.regime,
+      // L23: carry the captured feature vector through to the training outbox
+      // (assemble rebuilds plan, so it would otherwise be dropped here).
+      ...(active.plan.features ? { features: active.plan.features } : {}),
     },
     startedAt: active.startedAt,
     endedAt,
