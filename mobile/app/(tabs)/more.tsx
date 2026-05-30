@@ -1,33 +1,31 @@
 /**
- * More tab — the app's settings / overflow surface. Hosts the background-during-
- * session policy picker and Sign-out. Previously a modal (app/settings.tsx)
- * reached from the Home gear; moved here when the 5-tab FloqTabBar nav landed
- * ("More" → Settings), so it's now a first-class tab rather than a pushed modal.
- * Future overflow items (about, feedback link, theme override) slot in here.
+ * More tab — the app's account + settings hub, organized as a grouped row-menu
+ * (WHOOP-style): a tappable profile header, then sectioned rows that each push a
+ * focused sub-screen. Layout only — every row's logic lives in its sub-screen.
+ *
+ * Text discipline: row label names the thing, the one-line subtitle states the
+ * value (not how-to). Less text, less friction — but still self-explanatory.
  */
-import { useState } from 'react';
-import { router } from 'expo-router';
 import { ScrollView, StyleSheet, View } from 'react-native';
+import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Button, Text } from '../../components/ui';
-import { BackgroundPolicySetting } from '../../components/settings/BackgroundPolicySetting';
-import { signOut } from '../../services/firebase';
+import {
+  MenuRow,
+  MenuSection,
+  Text,
+  UserIcon,
+  SunIcon,
+  TimerIcon,
+  EyeIcon,
+  InfoIcon,
+  CapIcon,
+} from '../../components/ui';
+import { ProfileHeader } from '../../components/profile/ProfileHeader';
 import { useTheme } from '../../theme';
 
 export default function MoreTab() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const [signingOut, setSigningOut] = useState(false);
-
-  async function onSignOut() {
-    setSigningOut(true);
-    try {
-      await signOut();
-      router.replace('/');
-    } finally {
-      setSigningOut(false);
-    }
-  }
 
   return (
     <View style={[styles.root, { backgroundColor: theme.bg, paddingTop: insets.top + 12 }]}>
@@ -36,15 +34,19 @@ export default function MoreTab() {
       </View>
 
       <ScrollView contentContainerStyle={styles.body}>
-        <BackgroundPolicySetting />
-        <View style={styles.signOut}>
-          <Button
-            label="Sign out"
-            variant="secondary"
-            loading={signingOut}
-            onPress={onSignOut}
-          />
-        </View>
+        <ProfileHeader />
+
+        <MenuSection title="Account & settings">
+          <MenuRow Icon={UserIcon} label="My account" subtitle="Name, email, sign out" onPress={() => router.push('/account')} />
+          <MenuRow Icon={SunIcon} label="Appearance" subtitle="Theme and display" onPress={() => router.push('/appearance')} />
+          <MenuRow Icon={TimerIcon} label="Session" subtitle="What counts as a distraction" onPress={() => router.push('/session-settings')} />
+          <MenuRow Icon={EyeIcon} label="Privacy" subtitle="What others can see" onPress={() => router.push('/privacy')} />
+        </MenuSection>
+
+        <MenuSection title="Support">
+          <MenuRow Icon={InfoIcon} label="About" subtitle="How Floq works, version" onPress={() => router.push('/about')} />
+          <MenuRow Icon={CapIcon} label="Tutorials" subtitle="Short guides to get the most out of Floq" badge="Soon" disabled />
+        </MenuSection>
       </ScrollView>
     </View>
   );
@@ -52,12 +54,6 @@ export default function MoreTab() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, paddingHorizontal: 24 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  body: { gap: 24, paddingBottom: 24 },
-  signOut: { marginTop: 8 },
+  header: { marginBottom: 16 },
+  body: { gap: 28, paddingBottom: 32 },
 });
