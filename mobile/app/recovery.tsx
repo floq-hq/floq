@@ -63,6 +63,7 @@ export default function RecoveryScreen() {
     taskId?: string;
     taskTitle?: string;
     nextTaskId?: string;
+    doneAt?: string;
   }>();
 
   const breakMinutes = Math.max(0, Number(params.breakMinutes ?? 0));
@@ -93,10 +94,17 @@ export default function RecoveryScreen() {
   // one. nextTaskId param is a legacy fallback; the live store query wins.
   const nextTask = useTaskStore((s) => selectTopTask(s));
 
-  // Wall-clock anchor at mount. remaining = breakSeconds − elapsed, clamped ≥0.
-  // Same drift-free pattern as SessionTimer: a remount or backgrounding can't
-  // make the clock pause or restart — it's a pure function of wall time.
-  const startedAtMs = useSharedValue(Date.now());
+  // Wall-clock anchor = the DONE timestamp (audit #29), forwarded focus.tsx →
+  // summary → here. The break reminder notification is scheduled at DONE, but
+  // the summary dwells ~8s before routing in; anchoring to mount made the
+  // countdown lag the notification by that dwell. Anchoring to DONE keeps the
+  // two aligned. Falls back to now for any path that doesn't carry doneAt.
+  // Drift-free either way: remaining is a pure function of wall time, so a
+  // remount or backgrounding can't pause or restart it.
+  const doneAtMs = Number(params.doneAt);
+  const startedAtMs = useSharedValue(
+    Number.isFinite(doneAtMs) && doneAtMs > 0 ? doneAtMs : Date.now(),
+  );
   const remainingSec = useSharedValue(breakSeconds);
 
   useFrameCallback(() => {
@@ -126,6 +134,12 @@ export default function RecoveryScreen() {
     markDone(finishedTaskId);
   }, [finishedTaskId, markDone]);
 
+  // audit #16: a computeSessionPlan throw used to be logged only in __DEV__, so
+  // in production "Start next session" silently did nothing — a dead CTA. Surface
+  // it so the user gets feedback and an escape (the Skip-recovery → Home button
+  // stays available below).
+  const [startError, setStartError] = useState<string | null>(null);
+
   const onStartNext = useCallback(() => {
     const task = selectTopTask(useTaskStore.getState());
     if (!task) return;
@@ -135,12 +149,14 @@ export default function RecoveryScreen() {
     void cancelBreakReminder();
     try {
       const plan = computeSessionPlan(task.id);
+      setStartError(null);
       router.replace({
         pathname: '/focus',
         params: { taskId: task.id, plan: JSON.stringify(plan) },
       });
     } catch (err) {
       if (__DEV__) console.warn('[recovery] failed to start next session', err);
+      setStartError("Couldn't start the next session. Head back Home and try again.");
     }
   }, []);
 
@@ -202,6 +218,11 @@ export default function RecoveryScreen() {
       </View>
 
       <View style={styles.actions}>
+        {startError ? (
+          <Text variant="caption" color={theme.danger} style={styles.startError}>
+            {startError}
+          </Text>
+        ) : null}
         {nextTask ? (
           <Button
             label="Start next session"
@@ -239,5 +260,6 @@ const styles = StyleSheet.create({
   },
   taskTitle: { textAlign: 'center' },
   actions: { gap: 8 },
+  startError: { textAlign: 'center', paddingBottom: 4 },
   emptyQueue: { textAlign: 'center', paddingVertical: 8 },
 });
