@@ -98,6 +98,18 @@ describe('resolveRestore', () => {
     expect(loadActiveSession()).toBeNull();
   });
 
+  it('caps a stale (killed-then-reopened-much-later) save at the planned window', () => {
+    // Started a day ago, never DONE. Crediting `now − startedAt` would persist
+    // ~1440 phantom minutes + an inflated score forever (bug-audit-w5 #15).
+    saveActiveSession(makeActive({ startedAt: Date.now() - 24 * 60 * 60_000 }));
+    resolveRestore('save');
+
+    const [partial] = getRecentSessions();
+    expect(partial.actualFocusMinutes).toBe(45); // plan.focusMinutes — capped, not 1440
+    expect(partial.overrunMinutes).toBe(0); // capped at planned ⇒ no phantom overrun
+    expect(partial.completed).toBe(false);
+  });
+
   it('discard clears MMKV and writes nothing', () => {
     saveActiveSession(makeActive());
     resolveRestore('discard');
