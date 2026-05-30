@@ -31,6 +31,7 @@ import type {
   SessionPlan,
   TimerInputs,
 } from '../timer';
+import { warmingAlpha } from '../timer';
 import { routeSessionPlan } from '../ml/regimeRouter';
 import { matureInfer } from '../ml/matureInfer';
 import { encodeFeatures } from '../ml/featureVector';
@@ -251,6 +252,10 @@ export function computeSessionPlan(
       plan,
       regime: baseline.regime,
       sessionsCompleted,
+      // M6.2: the warming blend weight (cold ⊗ behavioral). Only meaningful in
+      // the warming regime — at α=1 the blend is pure cold, at α=0 pure
+      // behavioral; logged so the blend is observable in dev sanity checks.
+      alpha: warmingAlpha(sessionsCompleted),
       behavioralCount: behavioral.length,
       fmod,
       rmod,
