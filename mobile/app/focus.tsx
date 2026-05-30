@@ -214,12 +214,17 @@ export default function SessionScreen() {
       return;
     }
 
+    // One DONE timestamp, reused for both the session record and the recovery
+    // countdown anchor (audit #29) so the on-screen countdown and the break
+    // reminder notification (scheduled below, also at DONE) share an origin.
+    const doneAt = Date.now();
+
     // M4.5 / M4.6: assembly + focus score + overrun + recomputed break all
     // come from one place (services/session/finalize). Local truth is SQLite
     // via saveCompletedSession; the Firestore mirror is fired async with the
     // failure swallowed (offline / signed-out is fine — SQLite already holds
     // the truth).
-    const completed = finalizeOnDone(snapshot, Date.now(), CLIENT_VERSION);
+    const completed = finalizeOnDone(snapshot, doneAt, CLIENT_VERSION);
     saveCompletedSession(completed);
 
     // Refresh the Stats screen immediately (S4.1 wiring of M4.3 handoff). Without
@@ -243,6 +248,9 @@ export default function SessionScreen() {
         // "Mark task done" affordance for THIS task.
         taskId: snapshot.taskId,
         taskTitle: snapshot.task.title,
+        // audit #29: forwarded on to /recovery so its countdown anchors to DONE,
+        // not to recovery-mount (which lags by the summary's ~8s dwell).
+        doneAt: String(doneAt),
       },
     });
   }, [endSession]);

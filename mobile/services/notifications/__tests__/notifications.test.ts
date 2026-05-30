@@ -125,6 +125,26 @@ describe('cancelBreakReminder', () => {
     expect(mocks.cancelScheduledNotificationAsync).not.toHaveBeenCalled();
   });
 
+  // audit #30 — a Skip/Start-next that fires before a just-scheduled break
+  // reminder has registered must still cancel it. cancelBreakReminder awaits the
+  // in-flight schedule, so the sweep can't slip in before the notification lands.
+  it('cancels a break reminder even when it races a still-pending schedule', async () => {
+    state.permission = { granted: true, canAskAgain: false };
+    // Make the FIRST schedule slow: a naive cancel would sweep before it registers.
+    mocks.scheduleNotificationAsync.mockImplementationOnce(async (req) => {
+      await new Promise((r) => setTimeout(r, 20));
+      const identifier = `id-${state.nextId++}`;
+      state.scheduled.push({ identifier, content: req.content });
+      return identifier;
+    });
+
+    const schedulePromise = scheduleBreakReminder(5); // NOT awaited — the race
+    await cancelBreakReminder(); // fires while the schedule is still pending
+    await schedulePromise;
+
+    expect(state.scheduled).toHaveLength(0); // the reminder did not survive
+  });
+
   it('does NOT prompt for permission (cancel path is side-effect free)', async () => {
     state.permission = { granted: false, canAskAgain: true };
     await cancelBreakReminder();

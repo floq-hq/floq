@@ -74,6 +74,30 @@ export class GoogleSignInCancelledError extends Error {
   }
 }
 
+// --- Skeleton doc (best-effort) --------------------------------------------
+
+/**
+ * Write the `users/{uid}` skeleton, but never let a Firestore failure (offline
+ * blip, transient permission glitch, quota) block a sign-in that already
+ * succeeded. By the time we call this the user IS authenticated; ensureUserDoc
+ * is idempotent (no-op when the doc exists), so a miss is retried lazily on the
+ * next sign-in. audit #31: surfacing this as a sign-in error told the user
+ * "could not continue" while they were in fact signed in.
+ */
+async function ensureUserDocBestEffort(
+  user: Parameters<typeof ensureUserDoc>[0],
+  seed: Parameters<typeof ensureUserDoc>[1],
+): Promise<void> {
+  try {
+    await ensureUserDoc(user, seed);
+  } catch (err) {
+    if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      // eslint-disable-next-line no-console
+      console.warn('[auth] ensureUserDoc failed (non-fatal; user is signed in)', err);
+    }
+  }
+}
+
 // --- Email / password ------------------------------------------------------
 
 export async function signUp(params: {
@@ -89,6 +113,14 @@ export async function signUp(params: {
 
 export async function signInWithEmail(email: string, password: string): Promise<User> {
   const { user } = await signInWithEmailAndPassword(auth, email, password);
+  // audit #17: the other auth paths ensure the skeleton doc; this one didn't, so
+  // a returning user signing in on a new device could lack the `privacy:'private'`
+  // security default + `has_seen_intro`. Best-effort so a Firestore blip never
+  // blocks the (already-successful) sign-in.
+  await ensureUserDocBestEffort(user, {
+    email: user.email ?? email,
+    display_name: user.displayName ?? 'Floq user',
+  });
   return user;
 }
 
@@ -129,7 +161,10 @@ export async function signInWithGoogle(): Promise<User> {
   }
   const credential = GoogleAuthProvider.credential(idToken);
   const { user } = await signInWithCredential(auth, credential);
-  await ensureUserDoc(user, {
+  // audit #31: best-effort — signInWithCredential already succeeded, so a
+  // Firestore failure here must NOT propagate as a "could not continue with
+  // Google" error (welcome.tsx) when the user is actually signed in.
+  await ensureUserDocBestEffort(user, {
     email: user.email ?? googleUser.email ?? '',
     display_name: user.displayName ?? googleUser.name ?? 'Floq user',
   });

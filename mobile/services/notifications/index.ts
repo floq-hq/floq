@@ -103,28 +103,44 @@ async function cancelByKind(kind: ReminderKind): Promise<void> {
   );
 }
 
+// audit #30: the schedule (fired at DONE in focus.tsx) is not awaited by its
+// caller, and a fast Skip / Start-next can call cancelBreakReminder before that
+// schedule has registered its notification — the cancel sweeps nothing, the
+// schedule then lands, and "Recovery's almost up" survives into Session 2. We
+// track the in-flight break schedule here so cancelBreakReminder always runs its
+// sweep AFTER any pending schedule has registered, regardless of caller timing.
+let breakScheduleInFlight: Promise<unknown> = Promise.resolve();
+
 /** Schedule the end-of-break nudge. Replaces any prior break reminder so breaks
  *  never stack. Prompts for permission on first use (a session just ended — a
  *  deliberate action, not app open). Silent no-op if permission is denied. */
 export async function scheduleBreakReminder(breakMinutes: number): Promise<void> {
-  if (!(await ensurePermission())) return;
-  await cancelByKind('break');
-  await Notifications.scheduleNotificationAsync({
-    content: { title: BREAK_REMINDER.title, body: BREAK_REMINDER.body, data: { kind: 'break' } },
-    trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-      seconds: breakReminderSeconds(breakMinutes),
-      repeats: false,
-    },
-  });
+  const work = (async () => {
+    if (!(await ensurePermission())) return;
+    await cancelByKind('break');
+    await Notifications.scheduleNotificationAsync({
+      content: { title: BREAK_REMINDER.title, body: BREAK_REMINDER.body, data: { kind: 'break' } },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: breakReminderSeconds(breakMinutes),
+        repeats: false,
+      },
+    });
+  })();
+  // Track even on failure so a later cancel never deadlocks on a rejected schedule.
+  breakScheduleInFlight = work.catch(() => {});
+  return work;
 }
 
 /** Cancel any pending break reminder. Called when the user starts a new session
  *  before the break is over (L17 allows skipping recovery) or when they tap
  *  Skip recovery — without this, the "Recovery's almost up" notification fires
  *  mid-session 2. Idempotent: cheap no-op when nothing is scheduled.
- *  Does NOT prompt for permission — never side-effects on a cancel path. */
+ *  Does NOT prompt for permission — never side-effects on a cancel path.
+ *  Awaits any in-flight schedule first (audit #30) so a fast skip can't slip
+ *  the sweep in before the notification is registered. */
 export async function cancelBreakReminder(): Promise<void> {
+  await breakScheduleInFlight;
   await cancelByKind('break');
 }
 

@@ -28,6 +28,7 @@ import {
 } from 'react-native';
 import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { useTheme } from '../theme';
+import { indicatorTranslateX } from './FloqTabBar.helpers';
 
 // ---------------------------------------------------------------------------
 // Icons — outline set, 24×24, strokeWidth 2 (Lucide-weight). Color is driven
@@ -114,24 +115,30 @@ export function FloqTabBar({ active, onChange }: Props) {
   const cellWidth = useRef(0);
   const tx = useRef(new Animated.Value(0)).current;
 
-  const moveTo = (index: number) => {
-    const w = cellWidth.current;
-    const target = index * w + (w - HAIRLINE_WIDTH) / 2;
-    Animated.timing(tx, {
-      toValue: target,
-      duration: 340,
-      useNativeDriver: true,
-    }).start();
+  const moveTo = (index: number, animate: boolean) => {
+    const target = indicatorTranslateX(index, cellWidth.current, HAIRLINE_WIDTH);
+    // audit #24: no-op until the track is measured — the pre-layout move used to
+    // animate the indicator to ≈ -15px off-screen-left, then snap back.
+    if (target === null) return;
+    if (animate) {
+      Animated.timing(tx, {
+        toValue: target,
+        duration: 340,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      tx.setValue(target); // seat instantly — no slide on first/rotated layout
+    }
   };
 
   useEffect(() => {
-    moveTo(activeIndex);
+    moveTo(activeIndex, true); // animate the slide on a tab change
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeIndex]);
 
   const onTrackLayout = (e: LayoutChangeEvent) => {
     cellWidth.current = e.nativeEvent.layout.width / TABS.length;
-    moveTo(activeIndex); // re-seat without animation flash on first/rotated layout
+    moveTo(activeIndex, false); // re-seat without animation on first/rotated layout
   };
 
   return (
