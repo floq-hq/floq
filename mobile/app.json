@@ -39,10 +39,26 @@
       "icon": {
         "light": "./assets/icon-light.png",
         "dark": "./assets/icon-dark.png"
+      },
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "predictiveBackGestureEnabled": false
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "d60abccc-194f-4f6a-8efb-bf4ded8c2a9e"
+      }
+    },
+    "owner": "mohamedhiba",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/d60abccc-194f-4f6a-8efb-bf4ded8c2a9e"
     }
   }
 }
