@@ -16,6 +16,7 @@ import {
   insertSession,
   getRecentSessions,
   countSessionsToday,
+  countSessionsAllTime,
   saveCompletedSession,
   getSessionsSince,
   getAllSessionEndedAt,
@@ -115,6 +116,25 @@ describe('countSessionsToday', () => {
   it('is 0 with no sessions today', () => {
     insertSession(makeSession({ id: 'y', endedAt: yesterday23 }));
     expect(countSessionsToday(noon)).toBe(0);
+  });
+});
+
+describe('countSessionsAllTime (M5.4 regime tenure)', () => {
+  it('is 0 on an empty table', () => {
+    expect(countSessionsAllTime()).toBe(0);
+  });
+
+  it('counts every saved row regardless of day or completed flag', () => {
+    insertSession(makeSession({ id: 'a', endedAt: 1000 }));
+    insertSession(makeSession({ id: 'b', endedAt: 2_000_000_000 })); // a different day
+    insertSession(makeSession({ id: 'c', endedAt: 3000, completed: false })); // saved partial
+    expect(countSessionsAllTime()).toBe(3);
+  });
+
+  it('does not double-count a re-inserted id', () => {
+    insertSession(makeSession({ id: 'a', distractions: [1] }));
+    insertSession(makeSession({ id: 'a', distractions: [9] })); // same id, replaced
+    expect(countSessionsAllTime()).toBe(1);
   });
 });
 

@@ -25,11 +25,22 @@ vi.mock('../../../stores/useTaskStore', () => ({
 // existing pre-M4.7 expectations (focus 51 etc.) round-trip unchanged.
 const sql = vi.hoisted(() => ({
   sessionsToday: 0,
+  sessionsCompleted: 0, // M5.4: lifetime count → regime (0 keeps the cold tests cold)
   lastEndedAt: null as number | null,
-  recent: [] as Array<{ plan: { breakMinutes: number } }>,
+  // Rows carry the M4.7 prevBreak (plan.breakMinutes) AND, from M5.4, the fields
+  // the warming behavioral blend reads (actualFocusMinutes / startedAt / endedAt).
+  // The behavioral fields are optional so the cold/M4.7 tests can keep the terse
+  // `[{ plan: { breakMinutes } }]` shape — cold regime ignores behavioral.
+  recent: [] as Array<{
+    plan: { breakMinutes: number };
+    actualFocusMinutes?: number;
+    startedAt?: number;
+    endedAt?: number;
+  }>,
 }));
 vi.mock('../../storage/sessions', () => ({
   countSessionsToday: vi.fn(() => sql.sessionsToday),
+  countSessionsAllTime: vi.fn(() => sql.sessionsCompleted),
   getLastSessionEndedAt: vi.fn(() => sql.lastEndedAt),
   getRecentSessions: vi.fn((_n: number) => sql.recent),
 }));
@@ -282,5 +293,65 @@ describe('computeSessionPlan — task-estimate cap (L20)', () => {
     const plan = computeSessionPlan('t1', { now: morning10 });
     // depletion alone → 38; cap = 38; min(38, 38) = 38.
     expect(plan.focusMinutes).toBe(38);
+  });
+});
+
+// M5.4 — computeSessionPlan now routes through the regime router (cold / warming
+// blend / mature) by lifetime tenure (`sessions_completed`), instead of always
+// cold-starting. These cover the wiring; the blend math itself is covered in
+// services/timer/__tests__/warming.test.ts and the cutoffs in regimeRouter.test.ts.
+describe('computeSessionPlan — regime routing (M5.4)', () => {
+  // Two matching behavioral rows (work + morning, the current session's bucket)
+  // with IDENTICAL focus minutes — so behavioral_focus is exactly 30 no matter
+  // how recency weighting works, and these tests don't depend on that formula.
+  const morningWorkRow = {
+    plan: { breakMinutes: 11 },
+    actualFocusMinutes: 30,
+    startedAt: morning10,
+    endedAt: morning10,
+  };
+
+  beforeEach(() => {
+    store.answers = answers;
+    store.tasks = [makeTask()]; // difficulty 5, estMinutes 120 (L20 cap inert)
+    sql.sessionsToday = 0;
+    sql.sessionsCompleted = 0;
+    sql.lastEndedAt = null;
+    sql.recent = [];
+  });
+
+  it('cold regime (<5 lifetime): ignores behavioral history, the formula governs', () => {
+    sql.sessionsCompleted = 4; // last cold session
+    sql.recent = [morningWorkRow, morningWorkRow]; // present but unused in cold
+    // routeSessionPlan picks cold → computeColdStart → 60 × 0.85 = 51, break 11.
+    const plan = computeSessionPlan('t1', { now: morning10 });
+    expect(plan).toEqual({ focusMinutes: 51, breakMinutes: 11, regime: 'cold' });
+  });
+
+  it('warming regime (5–13 lifetime): blends the cold formula with behavioral focus', () => {
+    sql.sessionsCompleted = 9; // alpha = 1 − (9−4)/10 = 0.5
+    sql.recent = [morningWorkRow, morningWorkRow]; // behavioral_focus = 30
+    // blend = 0.5 × 51 (cold) + 0.5 × 30 (behavioral) = 40.5 → 40; break floor(40 × 0.22) = 8.
+    const plan = computeSessionPlan('t1', { now: morning10 });
+    expect(plan).toEqual({ focusMinutes: 40, breakMinutes: 8, regime: 'warming' });
+  });
+
+  it('mature tenure (14+) with no TFLite model falls back to warming (the M5.3 gap)', () => {
+    sql.sessionsCompleted = 20; // alpha = max(0, 1 − (20−4)/10) = 0
+    sql.recent = [morningWorkRow, morningWorkRow];
+    // No matureInfer injected (M5.3) → routeSessionPlan falls back to computeWarming,
+    // stamped regime 'warming'. alpha = 0 → blend = pure behavioral = 30; break 6.
+    const plan = computeSessionPlan('t1', { now: morning10 });
+    expect(plan).toEqual({ focusMinutes: 30, breakMinutes: 6, regime: 'warming' });
+  });
+
+  it('the L17 depletion mod still trims the warming baseline', () => {
+    sql.sessionsCompleted = 9; // warming baseline focus = 40 (as above)
+    sql.recent = [morningWorkRow, morningWorkRow];
+    sql.sessionsToday = 2; // fatigue 0.8
+    sql.lastEndedAt = morning10; // gap 0 → recovery_mod 0.85 (prevBreak 11 from recent[0])
+    // depletion = max(0.75, 0.8 × 0.85 = 0.68) = 0.75 → floor(40 × 0.75) = 30; break 6.
+    const plan = computeSessionPlan('t1', { now: morning10 });
+    expect(plan).toEqual({ focusMinutes: 30, breakMinutes: 6, regime: 'warming' });
   });
 });

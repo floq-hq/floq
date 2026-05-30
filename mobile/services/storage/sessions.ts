@@ -209,6 +209,16 @@ export function countSessionsToday(now: number = Date.now()): number {
   return row?.n ?? 0;
 }
 
+/** Lifetime count of all saved sessions, for the regime router's tenure gate
+ *  (M5.4 → TimerInputs.sessions_completed). Counts every saved row — DONE and
+ *  saved partials alike — consistent with countSessionsToday and the L16 streak/
+ *  stats treatment: each saved session is a focus-score data point the regime is
+ *  measured against. */
+export function countSessionsAllTime(): number {
+  const row = getDb().getFirstSync<{ n: number }>('SELECT COUNT(*) AS n FROM sessions');
+  return row?.n ?? 0;
+}
+
 /** Session-end write (supersedes the M3.2 direct Firestore write): SQLite is the
  *  source of truth, Firestore is a best-effort async mirror. A failed mirror
  *  must NOT lose the local write or throw — reconcile on a later sync. The S3.3
