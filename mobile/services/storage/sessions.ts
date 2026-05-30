@@ -95,6 +95,15 @@ export function insertSession(s: CompletedSession): void {
   });
 }
 
+/** Upsert sessions pulled from the Firestore mirror (cross-device sync) into
+ *  local SQLite. Reuses the idempotent `insertSession` (INSERT OR REPLACE by id +
+ *  distraction re-insert), so re-pulling the same session — or a device seeing its
+ *  own write echo back through the listener — is a harmless no-op. Sessions are
+ *  immutable + id-keyed, so this is a conflict-free union; never deletes local rows. */
+export function upsertRemoteSessions(sessions: readonly CompletedSession[]): void {
+  for (const s of sessions) insertSession(s);
+}
+
 /** Join the distraction rows for a batch of session rows and return the full
  *  CompletedSession array. Single SELECT for all sessions in the batch — keeps
  *  the storage layer at most two queries per fetch regardless of N. */

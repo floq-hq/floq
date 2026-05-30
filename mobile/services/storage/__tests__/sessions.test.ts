@@ -23,6 +23,7 @@ import {
   getMaxFocusScore,
   getLastSessionEndedAt,
   deleteAllSessions,
+  upsertRemoteSessions,
 } from '../sessions';
 
 function makeSession(over: Partial<CompletedSession> = {}): CompletedSession {
@@ -47,6 +48,38 @@ beforeEach(() => {
   resetExpoSqliteFake();
   writeSessionMock.mockClear();
   writeSessionMock.mockImplementation(() => Promise.resolve());
+});
+
+describe('upsertRemoteSessions (cross-device sync)', () => {
+  it('is idempotent — re-pulling the same session keeps one row, no duplicate distractions', () => {
+    const remote = makeSession({ id: 'r1', distractions: [1100, 1500] });
+    upsertRemoteSessions([remote]);
+    upsertRemoteSessions([remote]); // listener echo / re-pull
+    const rows = getRecentSessions();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual(remote);
+  });
+
+  it('unions multiple remote sessions into local SQLite', () => {
+    upsertRemoteSessions([
+      makeSession({ id: 'a', endedAt: 1000 }),
+      makeSession({ id: 'b', endedAt: 2000 }),
+    ]);
+    expect(getRecentSessions().map((s) => s.id)).toEqual(['b', 'a']); // newest first
+  });
+
+  it('a later pull with updated fields replaces the row (no dupes)', () => {
+    upsertRemoteSessions([makeSession({ id: 'x', focusScore: 10 })]);
+    upsertRemoteSessions([makeSession({ id: 'x', focusScore: 42 })]);
+    const rows = getRecentSessions();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].focusScore).toBe(42);
+  });
+
+  it('no-ops on an empty pull', () => {
+    expect(() => upsertRemoteSessions([])).not.toThrow();
+    expect(getRecentSessions()).toHaveLength(0);
+  });
 });
 
 describe('insertSession + getRecentSessions', () => {

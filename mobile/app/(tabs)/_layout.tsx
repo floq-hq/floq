@@ -17,6 +17,7 @@ import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FloqTabBar, type TabKey } from '../../components/FloqTabBar';
+import { useSessionSync } from '../../services/sync/useSessionSync';
 import { useTheme } from '../../theme';
 
 function AppTabBar({ state, navigation }: BottomTabBarProps) {
@@ -37,6 +38,10 @@ function AppTabBar({ state, navigation }: BottomTabBarProps) {
 }
 
 export default function TabsLayout() {
+  // Cross-device session sync runs for the life of the signed-in tab tree:
+  // pulls remote sessions into local SQLite in real time + refreshes stats.
+  useSessionSync();
+
   return (
     <Tabs
       screenOptions={{ headerShown: false }}
