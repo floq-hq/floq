@@ -34,6 +34,7 @@ import { useOnboardingStore } from '../../stores/useOnboardingStore';
 import { useSettingsStore } from '../../stores/useSettingsStore';
 import { useTaskStore } from '../../stores/useTaskStore';
 import { queryClient } from '../queryClient';
+import { deleteAllSessions } from '../storage/sessions';
 
 // getReactNativePersistence is exported only from Firebase's React Native build
 // (Metro resolves it via the `react-native` condition), so it exists at runtime
@@ -155,14 +156,21 @@ export async function signOut(): Promise<void> {
   //
   // The LLM cache (floq.llmCache.*) is intentionally preserved — it's derived,
   // non-PII, and survives account switches (decisions.md L13). Firebase's own
-  // tokens were already cleared by firebaseSignOut above. SQLite (sessions,
-  // tasks history) is per-device and is repopulated by User B's own activity;
-  // we don't wipe it here because there's no per-user SQLite isolation in MVP.
+  // tokens were already cleared by firebaseSignOut above.
   useOnboardingStore.getState().reset();
-  useTaskStore.getState().reset();
+  useTaskStore.getState().reset(); // also clears the tasks SQLite table
   useSettingsStore.getState().reset();
   useActiveSessionStore.getState().reset();
   queryClient.clear();
+
+  // Wipe the durable SQLite session history too (bug-audit-w5 #14). Reads in
+  // services/storage/sessions have no uid filter and there's no per-user SQLite
+  // isolation in MVP, so without this User A's sessions — hero score, forecast,
+  // streak, best-session (which carries a PRIVATE task title) and cold-start
+  // fatigue — would bleed into User B. Tasks are already cleared via the store
+  // reset above; this closes the same hole for session history. (Full uid-column
+  // isolation stays deferred.)
+  deleteAllSessions();
 }
 
 // --- Current user hook -----------------------------------------------------

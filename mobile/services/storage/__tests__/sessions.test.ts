@@ -21,6 +21,7 @@ import {
   getAllSessionEndedAt,
   getMaxFocusScore,
   getLastSessionEndedAt,
+  deleteAllSessions,
 } from '../sessions';
 
 function makeSession(over: Partial<CompletedSession> = {}): CompletedSession {
@@ -255,5 +256,30 @@ describe('getLastSessionEndedAt (M4.7 gap clock)', () => {
     insertSession(makeSession({ id: 'done', endedAt: 1000 }));
     insertSession(makeSession({ id: 'partial', endedAt: 2000, completed: false }));
     expect(getLastSessionEndedAt()).toBe(2000);
+  });
+});
+
+// bug-audit-w5 #14 — sign-out must wipe session history so it can't leak to the
+// next account (no per-user SQLite isolation in MVP).
+describe('deleteAllSessions', () => {
+  it('empties sessions AND their distractions', () => {
+    insertSession(makeSession({ id: 'a', distractions: [1100, 1500] }));
+    insertSession(makeSession({ id: 'b', endedAt: 4000, distractions: [4100] }));
+    expect(getRecentSessions()).toHaveLength(2);
+
+    deleteAllSessions();
+
+    expect(getRecentSessions()).toHaveLength(0);
+    expect(getAllSessionEndedAt()).toEqual([]);
+    expect(getLastSessionEndedAt()).toBeNull();
+    expect(getMaxFocusScore()).toBeNull();
+    // distractions are gone too: re-inserting the same id returns no orphans.
+    insertSession(makeSession({ id: 'a', distractions: [] }));
+    expect(getRecentSessions()[0].distractions).toEqual([]);
+  });
+
+  it('is a no-op on an empty DB (no throw)', () => {
+    expect(() => deleteAllSessions()).not.toThrow();
+    expect(getRecentSessions()).toHaveLength(0);
   });
 });

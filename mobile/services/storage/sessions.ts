@@ -219,3 +219,19 @@ export function saveCompletedSession(s: CompletedSession): void {
     // swallowed: SQLite already holds the truth; offline/signed-out is fine.
   });
 }
+
+/** Wipe ALL session history + its distractions, in one transaction. Called from
+ *  the sign-out teardown (services/firebase/auth.ts), mirroring deleteAllTasks.
+ *
+ *  Reads in this module have NO uid filter and there is no per-user SQLite
+ *  isolation in MVP, so without this the next account would inherit the prior
+ *  user's hero score / forecast / streak / best-session (which carries a PRIVATE
+ *  task title) and cold-start fatigue. Security-relevant — see bug-audit-w5 #14.
+ *  Full per-user isolation (a uid column + filter) is still deferred. */
+export function deleteAllSessions(): void {
+  const db = getDb();
+  db.withTransactionSync(() => {
+    db.runSync('DELETE FROM distractions');
+    db.runSync('DELETE FROM sessions');
+  });
+}
