@@ -1,0 +1,18 @@
+{
+  "model_version": "v1",
+  "synthetic": true,
+  "note": "Trained on synthetic cold-start data only (O11). Retrain on real beta data before TestFlight expands.",
+  "architecture": "MLP 13->32->16->1 ReLU",
+  "input_dim": 13,
+  "params": 993,
+  "seed": 42,
+  "n_samples": 20000,
+  "n_epochs": 300,
+  "batch_size": 256,
+  "lr": 0.001,
+  "target_noise_sd": 3.0,
+  "eval_mae_minutes": 11.3409,
+  "eval_rmse_minutes": 14.1962,
+  "data_sha256": "3a9d577fc5069ea0",
+  "git_sha": "bf8deca"
+}
