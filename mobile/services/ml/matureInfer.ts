@@ -82,11 +82,21 @@ export function runMatureInference(m: RunnableModel, inputs: TimerInputs): Sessi
 }
 
 /**
+ * L23 / O11 — the v1 model is SYNTHETIC and can't beat the warming blend (which
+ * runs on the user's real history), so the mature regime stays DORMANT: we do
+ * not route real users to the placeholder while we collect the opted-in real
+ * data that a v2 needs. Flip to `true` when a real-data v2 ships.
+ */
+export const MATURE_MODEL_ACTIVE = false;
+
+/**
  * The MatureInfer passed to routeSessionPlan. Synchronous (as the router
- * requires): returns null until the model is loaded, kicking off the lazy load
- * on the first miss so a later mature session start gets a real inference.
+ * requires). While dormant (above) it always returns null → routeSessionPlan
+ * falls back to the warming blend. When active, returns null until the model is
+ * loaded (kicking off the lazy load) so a later mature session gets a real run.
  */
 export const matureInfer: MatureInfer = (inputs) => {
+  if (!MATURE_MODEL_ACTIVE) return null; // dormant → warming fallback
   if (!model) {
     void ensureMatureModelLoaded();
     return null;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { matureInfer, runMatureInference } from '../matureInfer';
+import { MATURE_MODEL_ACTIVE, matureInfer, runMatureInference } from '../matureInfer';
 import type { OnboardingSeed, TimerInputs } from '../../timer';
 
 const seed: OnboardingSeed = {
@@ -69,9 +69,13 @@ describe('runMatureInference', () => {
 });
 
 describe('matureInfer (production closure)', () => {
-  it('returns null before any model is loaded (→ warming fallback)', () => {
-    // In the node/test env the lazy TFLite load can never succeed, so the closure
-    // always reports "model unavailable" — routeSessionPlan then uses warming.
+  it('is dormant for the synthetic v1 model (L23 / O11 — warming leads)', () => {
+    // The v1 model is synthetic and can't beat the warming blend, so the mature
+    // regime is parked until a real-data v2. Flip this when v2 ships.
+    expect(MATURE_MODEL_ACTIVE).toBe(false);
+  });
+
+  it('returns null while dormant (→ routeSessionPlan uses the warming blend)', () => {
     expect(matureInfer(makeInputs(), [])).toBeNull();
   });
 });
