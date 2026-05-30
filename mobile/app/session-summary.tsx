@@ -48,6 +48,7 @@ export default function SessionSummary() {
     taskId?: string;
     taskTitle?: string;
     doneAt?: string;
+    sessionId?: string;
   }>();
   const minutes = Number(params.minutes ?? 0);
   const distractions = Number(params.distractions ?? 0);
@@ -58,6 +59,9 @@ export default function SessionSummary() {
   // audit #29: pass the DONE timestamp straight through to /recovery so its
   // countdown anchors to DONE rather than recovery-mount (8s later).
   const doneAt = typeof params.doneAt === 'string' ? params.doneAt : '';
+  // L23: pass the session id through so /recovery's Mark-task-done can stamp the
+  // task-completion training label on this session's local sample.
+  const sessionId = typeof params.sessionId === 'string' ? params.sessionId : '';
   const streak = useCurrentStreak().data ?? 0;
 
   // S6.0: optional "share this session" affordance. Building the card needs a
@@ -86,9 +90,10 @@ export default function SessionSummary() {
         breakMinutes: String(breakMinutes),
         ...(taskId ? { taskId, taskTitle } : {}),
         ...(doneAt ? { doneAt } : {}),
+        ...(sessionId ? { sessionId } : {}),
       },
     });
-  }, [breakMinutes, taskId, taskTitle, doneAt]);
+  }, [breakMinutes, taskId, taskTitle, doneAt, sessionId]);
 
   // Auto-route after 8s; tap-anywhere does the same. The recovery screen is
   // the dwell space; this summary is a glance. Paused while the share card is

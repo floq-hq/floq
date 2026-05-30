@@ -37,6 +37,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Button, Text } from '../components/ui';
 import { computeSessionPlan } from '../services/session/compute';
+import { markTaskCompletedForSession } from '../services/session/markTaskDone';
 import { cancelBreakReminder } from '../services/notifications';
 import { selectTopTask, useTaskStore } from '../stores/useTaskStore';
 import { useTheme } from '../theme';
@@ -64,6 +65,7 @@ export default function RecoveryScreen() {
     taskTitle?: string;
     nextTaskId?: string;
     doneAt?: string;
+    sessionId?: string;
   }>();
 
   const breakMinutes = Math.max(0, Number(params.breakMinutes ?? 0));
@@ -84,6 +86,8 @@ export default function RecoveryScreen() {
   // still in the queue, the Mark-task-done affordance shows.
   const finishedTaskId = typeof params.taskId === 'string' ? params.taskId : '';
   const finishedTaskTitle = typeof params.taskTitle === 'string' ? params.taskTitle : '';
+  // The just-finished session's id (for the L23 task-completion training label).
+  const finishedSessionId = typeof params.sessionId === 'string' ? params.sessionId : '';
   const finishedTaskStillInQueue = useTaskStore((s) =>
     finishedTaskId ? s.tasks.some((t) => t.id === finishedTaskId) : false,
   );
@@ -132,7 +136,11 @@ export default function RecoveryScreen() {
   const onMarkDone = useCallback(() => {
     if (!finishedTaskId) return;
     markDone(finishedTaskId);
-  }, [finishedTaskId, markDone]);
+    // L23: record "this recommendation finished the task" on the just-finished
+    // session's local training sample — the strongest outcome label for a v2
+    // model (far better than focus minutes alone). Local-only; no egress here.
+    if (finishedSessionId) markTaskCompletedForSession(finishedSessionId);
+  }, [finishedTaskId, finishedSessionId, markDone]);
 
   // audit #16: a computeSessionPlan throw used to be logged only in __DEV__, so
   // in production "Start next session" silently did nothing — a dead CTA. Surface
