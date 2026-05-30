@@ -251,6 +251,9 @@ export default function SessionScreen() {
         // audit #29: forwarded on to /recovery so its countdown anchors to DONE,
         // not to recovery-mount (which lags by the summary's ~8s dwell).
         doneAt: String(doneAt),
+        // L23: forwarded through to /recovery so Mark-task-done can stamp the
+        // task-completion label on THIS session's local training sample.
+        sessionId: snapshot.sessionId,
       },
     });
   }, [endSession]);
