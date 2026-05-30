@@ -106,12 +106,27 @@ describe('signUp (email)', () => {
 });
 
 describe('signInWithEmail', () => {
-  it('delegates to the SDK and returns the user', async () => {
-    h.signInEmail.mockResolvedValue({ user: { uid: 'u2' } });
+  it('delegates to the SDK, ensures the skeleton doc, and returns the user', async () => {
+    h.signInEmail.mockResolvedValue({ user: { uid: 'u2', email: 'a@b.com', displayName: 'Ada' } });
 
     const user = await signInWithEmail('a@b.com', 'pw');
 
     expect(h.signInEmail).toHaveBeenCalledWith(auth, 'a@b.com', 'pw');
+    // audit #17: this path now ensures the doc like the other two.
+    expect(h.ensureUserDoc).toHaveBeenCalledWith(
+      { uid: 'u2', email: 'a@b.com', displayName: 'Ada' },
+      { email: 'a@b.com', display_name: 'Ada' },
+    );
+    expect(user).toEqual({ uid: 'u2', email: 'a@b.com', displayName: 'Ada' });
+  });
+
+  it('still returns the signed-in user when ensureUserDoc fails (best-effort, audit #31)', async () => {
+    h.signInEmail.mockResolvedValue({ user: { uid: 'u2' } });
+    h.ensureUserDoc.mockRejectedValue(new Error('firestore unavailable'));
+
+    const user = await signInWithEmail('a@b.com', 'pw');
+
+    // The sign-in succeeded — a Firestore blip must not throw out of here.
     expect(user).toEqual({ uid: 'u2' });
   });
 });
@@ -137,6 +152,22 @@ describe('signInWithGoogle', () => {
       { uid: 'u3', email: 'g@x.com', displayName: 'Gus' },
       { email: 'g@x.com', display_name: 'Gus' },
     );
+    expect(user.uid).toBe('u3');
+  });
+
+  it('still returns the signed-in user when ensureUserDoc fails (best-effort, audit #31)', async () => {
+    h.gHasPlay.mockResolvedValue(true);
+    h.gSignIn.mockResolvedValue({
+      type: 'success',
+      data: { idToken: 'tok', user: { email: 'g@x.com', name: 'Gus' } },
+    });
+    h.isSuccess.mockReturnValue(true);
+    h.signInCredential.mockResolvedValue({ user: { uid: 'u3', email: 'g@x.com', displayName: 'Gus' } });
+    h.ensureUserDoc.mockRejectedValue(new Error('firestore unavailable'));
+
+    // The credential exchange succeeded; the doc write failing must not surface
+    // as "could not continue with Google" (welcome.tsx) — the user IS signed in.
+    const user = await signInWithGoogle();
     expect(user.uid).toBe('u3');
   });
 
