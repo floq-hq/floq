@@ -44,7 +44,13 @@ export function SuggestedStopMeter({ elapsedSeconds, plannedFocusMinutes }: Prop
   const overrun = elapsedMin >= plannedFocusMinutes;
   const left = plannedFocusMinutes - elapsedMin;
   const overrunMin = elapsedMin - plannedFocusMinutes;
-  const progress = Math.max(0, Math.min(1, elapsedMin / plannedFocusMinutes));
+  // #27: a deep-linked {focusMinutes:0} reaches here past the 15-min clamp →
+  // 0/0 = NaN → width: 'NaN%'. Guard the denominator; a non-positive plan is
+  // already immediate-overrun (elapsedMin >= 0), so a full bar is consistent.
+  const progress =
+    plannedFocusMinutes > 0
+      ? Math.max(0, Math.min(1, elapsedMin / plannedFocusMinutes))
+      : 1;
 
   // Progress bar fills toward the suggested stop; once we're in overrun it stops
   // at 100% (no separate "overrun fill" — that would look like a regression to

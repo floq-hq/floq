@@ -42,6 +42,7 @@ import { SessionTimer } from '../components/session/SessionTimer';
 import { DistractionButton } from '../components/session/DistractionButton';
 import { SessionToast } from '../components/session/SessionToast';
 import { SuggestedStopMeter } from '../components/session/SuggestedStopMeter';
+import { displayPhase } from '../components/session/displayPhase';
 import { EndEarlySheet } from '../components/session/EndEarlySheet';
 import { phaseFor, type Phase, type SessionPlan } from '../services/timer';
 import { saveCompletedSession } from '../services/storage/sessions';
@@ -138,7 +139,10 @@ export default function SessionScreen() {
   const syncPhase = useCallback(
     (sec: number) => {
       if (!plan) return;
-      const next = phaseFor(sec, plan);
+      // #13: clamp recovery→flow for the pill — past the suggested stop the user
+      // is still focusing (overrun), the SuggestedStopMeter owns that state.
+      // phases.ts stays frozen.
+      const next = displayPhase(phaseFor(sec, plan));
       setPhase((cur) => (cur === next ? cur : next));
     },
     [plan],
@@ -243,8 +247,14 @@ export default function SessionScreen() {
     });
   }, [endSession]);
 
-  // Defensive: S3.0 always passes a plan, but a stray deep link shouldn't crash.
-  if (!plan) {
+  // Defensive: S3.0 always passes a plan + a resolvable task, but a stray deep
+  // link shouldn't crash — or freeze. #26: a valid plan with NO task made the
+  // mount-effect early-return (startSession never fired, startedAtMs stayed 0),
+  // so the frame callback gated the clock off and the live-looking timer stuck
+  // at 00:00. Guard the fallback on `!task` too: render the inert fallback
+  // instead of a frozen clock. Normal start (task in queue) and Resume (task
+  // from the active-session snapshot) both keep `task` non-null.
+  if (!plan || !task) {
     return (
       <View style={[styles.root, styles.fallback, { backgroundColor: theme.bg, paddingTop: insets.top + 24 }]}>
         <Text variant="body" color={theme.textMuted}>
