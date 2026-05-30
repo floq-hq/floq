@@ -54,7 +54,20 @@ export function resolveRestore(
   }
 
   // action === 'save'
-  const partial = finalizeOnAbandon(active, Date.now(), CLIENT_VERSION);
+  // The app was killed mid-session and reopened, so `Date.now()` is the REOPEN
+  // time, not when focus actually ended — crediting `now − startedAt` would
+  // inflate the partial (reopen a day later → hundreds of phantom minutes + an
+  // inflated score persisted to SQLite forever; bug-audit-w5 #15). We can't know
+  // the true end, so cap the credited focus at the planned window: a killed,
+  // unattended session can't have meaningfully focused past its own suggestion.
+  // (The LIVE end-early path — useActiveSessionStore.abandonSession — keeps the
+  // real wall-clock `now`, since the user is present and may legitimately
+  // overrun.)
+  const cappedEndedAt = Math.min(
+    Date.now(),
+    active.startedAt + active.plan.focusMinutes * 60_000,
+  );
+  const partial = finalizeOnAbandon(active, cappedEndedAt, CLIENT_VERSION);
   saveCompletedSession(partial);
   clearActiveSession();
   // We return the original ActiveSession (the in-flight shape the caller still
