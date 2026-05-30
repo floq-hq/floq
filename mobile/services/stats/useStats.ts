@@ -17,6 +17,7 @@ import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 
 import type { CompletedSession } from '../session/types';
 import { forecastNext7Days, type Forecast } from '../ml/forecast';
+import { shapeForecast, type ForecastShape } from './forecastShape';
 import {
   getAllSessionEndedAt,
   getBestSession,
@@ -42,6 +43,7 @@ export const statsKeys = {
   personalBest: ['stats', 'personalBest'] as const,
   bestSession: ['stats', 'bestSession'] as const,
   forecast: ['stats', 'forecast'] as const,
+  forecastShape: ['stats', 'forecastShape'] as const,
 };
 
 export function useWeeklyFocusScore(): UseQueryResult<number | null> {
@@ -104,5 +106,18 @@ export function useForecast(): UseQueryResult<Forecast | null> {
   return useQuery({
     queryKey: statsKeys.forecast,
     queryFn: () => forecastNext7Days(getFocusScoreSeries()),
+  });
+}
+
+/** The forecast shaped for S6.1's Victory chart (M6.1) — a solid `past` line, a
+ *  connected `forecast` projection, and a `confidenceBand` to shade. Returns
+ *  `null` below MIN_SESSIONS_FOR_FORECAST (7), same gate as useForecast(); the
+ *  cold-regime "learning your rhythm" state reads that null. Same `['stats', …]`
+ *  namespace, so a post-session invalidateQueries({ queryKey: statsKeys.all })
+ *  refreshes the chart too. */
+export function useForecastShape(): UseQueryResult<ForecastShape | null> {
+  return useQuery({
+    queryKey: statsKeys.forecastShape,
+    queryFn: () => shapeForecast(getFocusScoreSeries()),
   });
 }
