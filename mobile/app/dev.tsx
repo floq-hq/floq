@@ -9,9 +9,10 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ComponentsPreview } from '../components/dev/ComponentsPreview';
 import { TFLiteSpike } from '../components/dev/TFLiteSpike';
+import { TimerModelCheck } from '../components/dev/TimerModelCheck';
 import { ForecastStatesPanel } from '../components/dev/ForecastStatesPanel';
 
-type Harness = 'ui' | 'tflite' | 'forecast';
+type Harness = 'ui' | 'tflite' | 'timer-v1' | 'forecast';
 
 export default function DevHarness() {
   const [harness, setHarness] = useState<Harness>('ui');
@@ -20,11 +21,13 @@ export default function DevHarness() {
       <View style={styles.switcher}>
         <DevTab label="UI primitives" active={harness === 'ui'} onPress={() => setHarness('ui')} />
         <DevTab label="TFLite spike" active={harness === 'tflite'} onPress={() => setHarness('tflite')} />
+        <DevTab label="Timer v1" active={harness === 'timer-v1'} onPress={() => setHarness('timer-v1')} />
         <DevTab label="Forecast" active={harness === 'forecast'} onPress={() => setHarness('forecast')} />
       </View>
       <View style={styles.body}>
         {harness === 'ui' && <ComponentsPreview />}
         {harness === 'tflite' && <TFLiteSpike />}
+        {harness === 'timer-v1' && <TimerModelCheck />}
         {harness === 'forecast' && <ForecastStatesPanel />}
       </View>
     </View>
