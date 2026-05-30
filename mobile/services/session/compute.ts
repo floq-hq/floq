@@ -23,21 +23,34 @@ import {
   BREAK_RATIO,
   FOCUS_MAX,
   FOCUS_MIN,
-  computeColdStart,
   fatigueMod,
 } from '../timer/coldStart';
-import type { HourBucket, SessionPlan, TimerInputs } from '../timer';
+import type {
+  BehavioralSession,
+  HourBucket,
+  SessionPlan,
+  TimerInputs,
+} from '../timer';
+import { routeSessionPlan } from '../ml/regimeRouter';
 import { toOnboardingSeed } from '../onboarding/seed';
 import type { OnboardingAnswers } from '../onboarding/types';
 import type { Task } from '../tasks';
+import type { CompletedSession } from './types';
 import { useOnboardingStore } from '../../stores/useOnboardingStore';
 import { useTaskStore } from '../../stores/useTaskStore';
 import {
+  countSessionsAllTime,
   countSessionsToday,
   getLastSessionEndedAt,
   getRecentSessions,
 } from '../storage/sessions';
+import { weekStartMs } from '../stats/aggregations';
 import { depletionMod, recoveryMod } from './recovery';
+
+/** How many recent sessions to pull for the warming behavioral blend (M5.4).
+ *  The blend recency-weights matches within this window; 30 covers a typical
+ *  rolling fortnight+ of usage. Tunable — not a frozen constant. */
+const BEHAVIORAL_LOOKBACK = 30;
 
 type DayOfWeek = TimerInputs['context']['day_of_week']; // 0..6 (Sun..Sat)
 
@@ -51,8 +64,10 @@ type DayOfWeek = TimerInputs['context']['day_of_week']; // 0..6 (Sun..Sat)
 export interface SessionComputeContext {
   now?: number; // default Date.now()
   sessionsToday?: number; // default: countSessionsToday(now) from SQLite (M4.2)
+  sessionsCompleted?: number; // default: countSessionsAllTime() — lifetime count, drives the regime (M5.4)
   hoursSinceLast?: number; // default 24
   history?: { recent_focus_avg: number | null; recent_distract: number | null };
+  behavioral?: BehavioralSession[]; // default: built from getRecentSessions() — the warming blend signal (M5.4)
   recoveryGapMin?: number; // default: derived from getLastSessionEndedAt()
   recommendedBreakMin?: number; // default: derived from the previous session's break_minutes
 }
@@ -101,7 +116,7 @@ export function buildSessionInputs(
     },
     history: ctx.history ?? { recent_focus_avg: null, recent_distract: null },
     onboarding: toOnboardingSeed(answers, now),
-    sessions_completed: 0,
+    sessions_completed: ctx.sessionsCompleted ?? 0,
   };
 }
 
@@ -131,30 +146,62 @@ export function computeSessionPlan(
     throw new Error(`[session] computeSessionPlan: no task found for id "${taskId}".`);
   }
 
-  // sessions_today now has a real source (M4.2): count today's completed
-  // sessions from SQLite unless the caller supplied it. Resolved here in the
-  // impure wrapper so buildSessionInputs stays pure. One indexed COUNT at
-  // session start (not a render/tick path) — cheap and synchronous.
+  // Live SQLite reads, resolved here in the impure wrapper so buildSessionInputs
+  // stays pure. All overridable via ctx (tests inject). One indexed COUNT + one
+  // bounded SELECT at session start (not a render/tick path) — cheap and sync.
+  //  • sessions_today (M4.2)      → cold-start fatigue
+  //  • sessions_completed (M5.4)  → which regime the router picks
+  //  • recent rows                → reused for BOTH the warming behavioral blend
+  //                                  AND the M4.7 prevBreak gap clock (one query)
   const now = ctx.now ?? Date.now();
   const sessionsToday = ctx.sessionsToday ?? countSessionsToday(now);
-  const inputs = buildSessionInputs(task, answers, { ...ctx, now, sessionsToday });
+  const sessionsCompleted = ctx.sessionsCompleted ?? countSessionsAllTime();
+  const recent = getRecentSessions(BEHAVIORAL_LOOKBACK);
+
+  // M5.4 — behavioral history for the warming blend. task_type isn't stored per
+  // session, but it's the user's single onboarding use_case (not per-task), so
+  // every past session shares the current value — stamp it on each row; the
+  // warming useCase filter then reduces to an hour-bucket match.
+  const useCase = toOnboardingSeed(answers, now).use_case;
+  const behavioral = ctx.behavioral ?? recent.map((s) => toBehavioralSession(s, useCase));
+
+  // Warming's secondary fallback (timer.md): rolling 7-day average focus minutes,
+  // used when fewer than 2 same-bucket behavioral matches exist. Derived from the
+  // already-fetched rows — no extra query. weekStartMs is the DST-safe window.
+  const recentFocusAvg =
+    ctx.history?.recent_focus_avg ?? meanFocusSince(behavioral, weekStartMs(now));
+
+  const inputs = buildSessionInputs(task, answers, {
+    ...ctx,
+    now,
+    sessionsToday,
+    sessionsCompleted,
+    history: {
+      recent_focus_avg: recentFocusAvg,
+      recent_distract: ctx.history?.recent_distract ?? null,
+    },
+  });
 
   // M4.7 / L17 — depletion debt as a post-modifier on the regime router output.
   //
-  // The mechanism: compute the cold-start output as if there were NO same-day
+  // The mechanism: compute the regime baseline as if there were NO same-day
   // fatigue (`sessions_today = 0` ⇒ `fatigueMod = 1.0`), then apply the floored
   // joint depletion modifier (`max(0.75, fatigueMod × recoveryMod)`) in place
   // of the two separate factors. This is the L17 "in place of" semantics:
-  //   final_focus = clamp(15, 90) × round(base × distract × diff × time × DMOD)
-  // The frozen `coldStart.ts` constants stay untouched — this path reads them
-  // through the lifted exports only.
+  //   final_focus = clamp(15, 90) × round(baseline × DMOD)
+  // The frozen `coldStart.ts` constants stay untouched — both the cold path and
+  // warming's cold component read them through the lifted exports only.
   const noFatigueInputs: TimerInputs = {
     ...inputs,
     context: { ...inputs.context, sessions_today: 0 },
   };
-  const baseline = computeColdStart(noFatigueInputs);
+  // M5.4 — route through the regime engine (cold / warming blend / mature) by
+  // lifetime tenure instead of always cold-starting. No matureInfer is injected
+  // yet (M5.3 / TFLite), so mature-tenure users fall back to the warming blend
+  // (regime stamped 'warming') — the documented M5.2→M5.3 gap behavior.
+  const baseline = routeSessionPlan(noFatigueInputs, behavioral);
 
-  const { gapMin, prevBreak } = resolveRecoveryGap(ctx);
+  const { gapMin, prevBreak } = resolveRecoveryGap(ctx, recent);
   const fmod = fatigueMod(sessionsToday);
   const rmod = recoveryMod(gapMin, prevBreak);
   const dmod = depletionMod(fmod, rmod);
@@ -195,6 +242,9 @@ export function computeSessionPlan(
     console.log('[session] computeSessionPlan', {
       taskId,
       plan,
+      regime: baseline.regime,
+      sessionsCompleted,
+      behavioralCount: behavioral.length,
       fmod,
       rmod,
       dmod,
@@ -213,12 +263,46 @@ export function computeSessionPlan(
  *  constant — revisit with real-usage data. (decisions.md L20) */
 export const TASK_ESTIMATE_BUFFER = 1.5;
 
+/** Map a stored session row → the warming blend's BehavioralSession (M5.4).
+ *  hourBucket is derived from `startedAt` (not stored as a column); useCase is
+ *  stamped by the caller (the user's single onboarding use_case). */
+function toBehavioralSession(
+  s: CompletedSession,
+  useCase: BehavioralSession['useCase'],
+): BehavioralSession {
+  return {
+    focusMinutes: s.actualFocusMinutes,
+    hourBucket: hourBucket(new Date(s.startedAt)),
+    useCase,
+    endedAt: s.endedAt,
+  };
+}
+
+/** Rolling mean of focus minutes for sessions ended at/after `sinceMs`. `null`
+ *  when the window is empty — the warming blend treats that as "no behavioral
+ *  fallback" and leans on the cold result. */
+function meanFocusSince(sessions: readonly BehavioralSession[], sinceMs: number): number | null {
+  let sum = 0;
+  let count = 0;
+  for (const s of sessions) {
+    if (s.endedAt < sinceMs) continue;
+    sum += s.focusMinutes;
+    count += 1;
+  }
+  return count === 0 ? null : sum / count;
+}
+
 /** Resolve `gapMin` + `prevBreak` for the M4.7 depletion path. Caller-provided
  *  values win (tests inject); otherwise we read the most-recent ended_at + its
- *  break_minutes from SQLite. First session of the day (no prior row inside
- *  the recovery window) yields a non-positive `prevBreak`, which `recoveryMod`
- *  treats as "no prior session" (returns 1.0 — no penalty). */
-function resolveRecoveryGap(ctx: SessionComputeContext): {
+ *  break_minutes from SQLite. `recent` is the already-fetched recent-sessions
+ *  window (newest first) — reused here so there's a single query per START.
+ *  First session of the day (no prior row inside the recovery window) yields a
+ *  non-positive `prevBreak`, which `recoveryMod` treats as "no prior session"
+ *  (returns 1.0 — no penalty). */
+function resolveRecoveryGap(
+  ctx: SessionComputeContext,
+  recent: readonly CompletedSession[],
+): {
   gapMin: number;
   prevBreak: number;
 } {
@@ -234,9 +318,9 @@ function resolveRecoveryGap(ctx: SessionComputeContext): {
   }
   const now = ctx.now ?? Date.now();
   const gapMin = Math.max(0, (now - lastEndedAt) / 60_000);
-  // Pull the most-recent row's stored break_minutes — already recomputed-at-DONE
-  // per M4.6 (`finalize` writes the recomputed value into the stored plan).
-  const recent = getRecentSessions(1);
+  // Most-recent row's stored break_minutes — already recomputed-at-DONE per M4.6
+  // (`finalize` writes the recomputed value into the stored plan). `recent[0]` is
+  // newest (getRecentSessions orders by ended_at DESC).
   const prevBreak = recent[0]?.plan.breakMinutes ?? 0;
   return { gapMin, prevBreak };
 }
