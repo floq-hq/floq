@@ -12,6 +12,7 @@
 import { computeFocusScore } from '../timer/focusScore';
 import type { ActiveSession, CompletedSession } from './types';
 import { overrunMinutes, recoveryBreakMinutes } from './overrun';
+import { MODEL_VERSION } from '../ml/modelVersion';
 
 /** Wall-clock minutes between two epoch-ms timestamps, rounded to nearest. */
 function minutesBetween(startMs: number, endMs: number): number {
@@ -46,6 +47,9 @@ function assemble(
       focusMinutes: planned,
       breakMinutes: recomputedBreak,
       regime: active.plan.regime,
+      // L23: carry the captured feature vector through to the training outbox
+      // (assemble rebuilds plan, so it would otherwise be dropped here).
+      ...(active.plan.features ? { features: active.plan.features } : {}),
     },
     startedAt: active.startedAt,
     endedAt,
@@ -55,6 +59,10 @@ function assemble(
     completed,
     overrunMinutes: overrun,
     clientVersion,
+    // M5.3: stamp the model version ONLY when the mature TFLite model produced
+    // the plan, upholding the `regime === 'mature' ⟺ modelVersion present`
+    // invariant (regimeRouter.ts). Cold/warming plans carry no modelVersion.
+    ...(active.plan.regime === 'mature' ? { modelVersion: MODEL_VERSION } : {}),
   };
 }
 

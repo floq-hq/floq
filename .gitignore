@@ -37,6 +37,14 @@ ml/spike/spike_model.pt
 ml/spike/*.onnx
 ml/spike/tf_out/
 
+# ML v1 build artifacts (M5.3). The deployed .tflite is committed under
+# mobile/assets/models/; the .pt is regenerable from the seeded v1.py, and the
+# ONNX / TF intermediates are throwaway. metadata.json IS committed (the
+# reproducibility record per ml/CLAUDE.md).
+ml/training/*.pt
+ml/export/*.onnx
+ml/export/tf_out_v1/
+
 # ---- Test / coverage ----
 coverage/
 

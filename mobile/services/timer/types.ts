@@ -35,6 +35,12 @@ export interface SessionPlan {
   focusMinutes: number;
   breakMinutes: number;
   regime: 'cold' | 'warming' | 'mature';
+  /** The encoded 13-dim model input that produced this plan (ml/MODEL_SPEC.md),
+   *  captured for the local ML training outbox (L23). Only `computeSessionPlan`
+   *  sets it; the regime engines leave it undefined. Title-free / no PII — rides
+   *  to the outbox via finalize, and is NOT written to the Firestore session
+   *  mirror (which maps explicit fields). */
+  features?: readonly number[];
 }
 
 // One completed session's behavioral outcome, fed to the warming blend.

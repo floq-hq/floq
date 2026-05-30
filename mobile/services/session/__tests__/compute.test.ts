@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { OnboardingAnswers } from '../../onboarding/types';
+import type { SessionPlan } from '../../timer';
 import type { Task } from '../../tasks';
 
 // Mock the store modules (the impure boundary) so compute's wiring is tested in
@@ -45,6 +46,12 @@ vi.mock('../../storage/sessions', () => ({
   getRecentSessions: vi.fn((_n: number) => sql.recent),
 }));
 
+// M5.3: compute now injects the TFLite matureInfer into routeSessionPlan. Stub it
+// to "model unavailable" (null) here so these tests stay native-free — the mature
+// path then falls back to warming, exactly as on a device before the model loads.
+// matureInfer's own decode logic is covered in services/ml/__tests__/matureInfer.test.ts.
+vi.mock('../../ml/matureInfer', () => ({ matureInfer: () => null }));
+
 import {
   TASK_ESTIMATE_BUFFER,
   hourBucket,
@@ -80,6 +87,15 @@ function makeTask(over: Partial<Task> = {}): Task {
     ...over,
   };
 }
+
+// compute now attaches the ML feature vector (L23) to every plan. These tests
+// assert the recommendation itself, so compare the core fields; the captured
+// vector is verified separately below + in featureVector.test.ts.
+const corePlan = (p: SessionPlan) => ({
+  focusMinutes: p.focusMinutes,
+  breakMinutes: p.breakMinutes,
+  regime: p.regime,
+});
 
 describe('hourBucket', () => {
   it('maps local hour to the confirmed cutoffs', () => {
@@ -139,7 +155,13 @@ describe('computeSessionPlan', () => {
     // 60 × 1.0 (neutral) × 0.85 (difficulty 5) × 1.0 (morning match) × 1.0 (1st today) = 51
     // No prior session → recovery_mod = 1.0, depletion_mod = 1.0 (no trim).
     const plan = computeSessionPlan('t1', { now: morning10 });
-    expect(plan).toEqual({ focusMinutes: 51, breakMinutes: 11, regime: 'cold' });
+    expect(corePlan(plan)).toEqual({ focusMinutes: 51, breakMinutes: 11, regime: 'cold' });
+  });
+
+  it('attaches the 13-dim ML feature vector to the plan (L23 capture)', () => {
+    const plan = computeSessionPlan('t1', { now: morning10 });
+    expect(plan.features).toHaveLength(13);
+    expect(plan.features?.every((n) => typeof n === 'number' && Number.isFinite(n))).toBe(true);
   });
 
   it('sources sessions_today from SQLite when ctx omits it (fatigue applies as depletion floor)', () => {
@@ -149,14 +171,14 @@ describe('computeSessionPlan', () => {
     // only behavior for the first session of a recovery cycle).
     // 60 × 1.0 × 0.85 × 1.0 × 0.8 = 40.8 → floor 40; break floor(40 × 0.22) = 8
     const plan = computeSessionPlan('t1', { now: morning10 });
-    expect(plan).toEqual({ focusMinutes: 40, breakMinutes: 8, regime: 'cold' });
+    expect(corePlan(plan)).toEqual({ focusMinutes: 40, breakMinutes: 8, regime: 'cold' });
   });
 
   it('lets an explicit ctx.sessionsToday override the SQLite count', () => {
     sql.sessionsToday = 2; // SQLite would say 3rd today...
     // ...but the caller pins it to the 1st → fatigue ×1.0 → focus 51
     const plan = computeSessionPlan('t1', { now: morning10, sessionsToday: 0 });
-    expect(plan).toEqual({ focusMinutes: 51, breakMinutes: 11, regime: 'cold' });
+    expect(corePlan(plan)).toEqual({ focusMinutes: 51, breakMinutes: 11, regime: 'cold' });
   });
 
   it('M4.7: back-to-back with zero gap trims focus via depletion', () => {
@@ -168,7 +190,7 @@ describe('computeSessionPlan', () => {
     sql.lastEndedAt = morning10; // gap = 0 minutes
     sql.recent = [{ plan: { breakMinutes: 11 } }];
     const plan = computeSessionPlan('t1', { now: morning10 });
-    expect(plan).toEqual({ focusMinutes: 39, breakMinutes: 8, regime: 'cold' });
+    expect(corePlan(plan)).toEqual({ focusMinutes: 39, breakMinutes: 8, regime: 'cold' });
   });
 
   it('M4.7: worst-corner depletion clips to DEPLETION_FLOOR (0.75)', () => {
@@ -179,7 +201,7 @@ describe('computeSessionPlan', () => {
     sql.lastEndedAt = morning10;
     sql.recent = [{ plan: { breakMinutes: 11 } }];
     const plan = computeSessionPlan('t1', { now: morning10 });
-    expect(plan).toEqual({ focusMinutes: 38, breakMinutes: 8, regime: 'cold' });
+    expect(corePlan(plan)).toEqual({ focusMinutes: 38, breakMinutes: 8, regime: 'cold' });
   });
 
   it('M4.7: rested fully (gap >= recommended break) yields no recovery penalty', () => {
@@ -188,7 +210,7 @@ describe('computeSessionPlan', () => {
     sql.recent = [{ plan: { breakMinutes: 11 } }];
     // depletion_mod = max(0.75, 1.0 × 1.0) = 1.0 → no trim, focus = 51.
     const plan = computeSessionPlan('t1', { now: morning10 });
-    expect(plan).toEqual({ focusMinutes: 51, breakMinutes: 11, regime: 'cold' });
+    expect(corePlan(plan)).toEqual({ focusMinutes: 51, breakMinutes: 11, regime: 'cold' });
   });
 
   it('M4.7: injected ctx.recoveryGapMin + recommendedBreakMin win over storage', () => {
@@ -202,7 +224,7 @@ describe('computeSessionPlan', () => {
       recoveryGapMin: 0,
       recommendedBreakMin: 11,
     });
-    expect(plan).toEqual({ focusMinutes: 43, breakMinutes: 9, regime: 'cold' });
+    expect(corePlan(plan)).toEqual({ focusMinutes: 43, breakMinutes: 9, regime: 'cold' });
   });
 
   it('throws when the task id is unknown', () => {
@@ -250,7 +272,7 @@ describe('computeSessionPlan — task-estimate cap (L20)', () => {
     // Worked example: focus = 51, break = 11.
     store.tasks = [makeTask({ estMinutes: 240 })];
     const plan = computeSessionPlan('t1', { now: morning10 });
-    expect(plan).toEqual({ focusMinutes: 51, breakMinutes: 11, regime: 'cold' });
+    expect(corePlan(plan)).toEqual({ focusMinutes: 51, breakMinutes: 11, regime: 'cold' });
   });
 
   it('FOCUS_MIN (15) still wins for tiny tasks (5-min estimate)', () => {
@@ -325,7 +347,7 @@ describe('computeSessionPlan — regime routing (M5.4)', () => {
     sql.recent = [morningWorkRow, morningWorkRow]; // present but unused in cold
     // routeSessionPlan picks cold → computeColdStart → 60 × 0.85 = 51, break 11.
     const plan = computeSessionPlan('t1', { now: morning10 });
-    expect(plan).toEqual({ focusMinutes: 51, breakMinutes: 11, regime: 'cold' });
+    expect(corePlan(plan)).toEqual({ focusMinutes: 51, breakMinutes: 11, regime: 'cold' });
   });
 
   it('warming regime (5–13 lifetime): blends the cold formula with behavioral focus', () => {
@@ -333,7 +355,7 @@ describe('computeSessionPlan — regime routing (M5.4)', () => {
     sql.recent = [morningWorkRow, morningWorkRow]; // behavioral_focus = 30
     // blend = 0.5 × 51 (cold) + 0.5 × 30 (behavioral) = 40.5 → 40; break floor(40 × 0.22) = 8.
     const plan = computeSessionPlan('t1', { now: morning10 });
-    expect(plan).toEqual({ focusMinutes: 40, breakMinutes: 8, regime: 'warming' });
+    expect(corePlan(plan)).toEqual({ focusMinutes: 40, breakMinutes: 8, regime: 'warming' });
   });
 
   it('mature tenure (14+) with no TFLite model falls back to warming (the M5.3 gap)', () => {
@@ -342,7 +364,7 @@ describe('computeSessionPlan — regime routing (M5.4)', () => {
     // No matureInfer injected (M5.3) → routeSessionPlan falls back to computeWarming,
     // stamped regime 'warming'. alpha = 0 → blend = pure behavioral = 30; break 6.
     const plan = computeSessionPlan('t1', { now: morning10 });
-    expect(plan).toEqual({ focusMinutes: 30, breakMinutes: 6, regime: 'warming' });
+    expect(corePlan(plan)).toEqual({ focusMinutes: 30, breakMinutes: 6, regime: 'warming' });
   });
 
   it('the L17 depletion mod still trims the warming baseline', () => {
@@ -352,6 +374,6 @@ describe('computeSessionPlan — regime routing (M5.4)', () => {
     sql.lastEndedAt = morning10; // gap 0 → recovery_mod 0.85 (prevBreak 11 from recent[0])
     // depletion = max(0.75, 0.8 × 0.85 = 0.68) = 0.75 → floor(40 × 0.75) = 30; break 6.
     const plan = computeSessionPlan('t1', { now: morning10 });
-    expect(plan).toEqual({ focusMinutes: 30, breakMinutes: 6, regime: 'warming' });
+    expect(corePlan(plan)).toEqual({ focusMinutes: 30, breakMinutes: 6, regime: 'warming' });
   });
 });

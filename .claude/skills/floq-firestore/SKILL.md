@@ -26,6 +26,9 @@ partnerships/{pairId}             Per L18: the 1:1 focus-partner edge.
 partner_invites/{inviteId}        Pending partner invites.
 
 llm_cache/{hash}                  Optional — shared LLM result cache by input hash.
+
+training_samples/{autoId}         Anonymized ML training samples (L23). Opt-in,
+                                  create-only, NO uid / PII / task titles.
 ```
 
 Old n:n `friendships` / `friend_requests` are dropped from the active spec (L18 supersedes O5). Revert source is git history (pre-`spec/social-core-pivot`).
