@@ -47,8 +47,7 @@ export function BackgroundPolicySetting() {
     <View style={styles.section}>
       <Text variant="heading">Leaving a session</Text>
       <Text variant="body" color={theme.textMuted} style={styles.intro}>
-        Sessions can&apos;t be paused — leaving the app mid-session counts as a distraction. Choose how
-        forgiving that is.
+        Leaving mid-session counts as a distraction — choose how forgiving.
       </Text>
 
       <View style={styles.options} accessibilityRole="radiogroup">

@@ -9,3 +9,9 @@ export {
 } from './SegmentedControl';
 export { Slider, type SliderProps } from './Slider';
 export { TextField, type TextFieldProps } from './TextField';
+export { Avatar, type AvatarProps } from './Avatar';
+export { initialsFromName } from './avatarInitials';
+export { MenuRow, type MenuRowProps } from './MenuRow';
+export { MenuSection } from './MenuSection';
+export { ScreenHeader } from './ScreenHeader';
+export * from './icons';
