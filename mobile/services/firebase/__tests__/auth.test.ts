@@ -26,6 +26,7 @@ const h = vi.hoisted(() => {
     resetActive: vi.fn(),
     queryClientClear: vi.fn(),
     deleteAllSessions: vi.fn(),
+    deleteAllTrainingSamples: vi.fn(),
     gConfigure: vi.fn(),
     gHasPlay: vi.fn(),
     gSignIn: vi.fn(),
@@ -56,6 +57,9 @@ vi.mock('../../queryClient', () => ({
 }));
 vi.mock('../../storage/sessions', () => ({
   deleteAllSessions: h.deleteAllSessions,
+}));
+vi.mock('../../storage/trainingOutbox', () => ({
+  deleteAllTrainingSamples: h.deleteAllTrainingSamples,
 }));
 vi.mock('firebase/auth', () => ({
   initializeAuth: h.initializeAuth,
@@ -206,6 +210,8 @@ describe('signOut', () => {
     // bug-audit-w5 #14 — durable SQLite session history is wiped too, so it
     // can't leak (incl. private task titles) into the next account.
     expect(h.deleteAllSessions).toHaveBeenCalledTimes(1);
+    // L23 — the local ML training outbox is wiped too (un-uploaded samples).
+    expect(h.deleteAllTrainingSamples).toHaveBeenCalledTimes(1);
   });
 
   it('still wipes local state even if the Google revoke fails (non-Google session)', async () => {
@@ -220,6 +226,7 @@ describe('signOut', () => {
     expect(h.resetActive).toHaveBeenCalledTimes(1);
     expect(h.queryClientClear).toHaveBeenCalledTimes(1);
     expect(h.deleteAllSessions).toHaveBeenCalledTimes(1);
+    expect(h.deleteAllTrainingSamples).toHaveBeenCalledTimes(1);
   });
 });
 

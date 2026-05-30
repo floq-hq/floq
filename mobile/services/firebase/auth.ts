@@ -35,6 +35,7 @@ import { useSettingsStore } from '../../stores/useSettingsStore';
 import { useTaskStore } from '../../stores/useTaskStore';
 import { queryClient } from '../queryClient';
 import { deleteAllSessions } from '../storage/sessions';
+import { deleteAllTrainingSamples } from '../storage/trainingOutbox';
 
 // getReactNativePersistence is exported only from Firebase's React Native build
 // (Metro resolves it via the `react-native` condition), so it exists at runtime
@@ -206,6 +207,9 @@ export async function signOut(): Promise<void> {
   // reset above; this closes the same hole for session history. (Full uid-column
   // isolation stays deferred.)
   deleteAllSessions();
+  // L23: the local ML training outbox is also unfiltered by uid — clear it so
+  // User A's un-uploaded samples never flush under User B's account.
+  deleteAllTrainingSamples();
 }
 
 // --- Current user hook -----------------------------------------------------
