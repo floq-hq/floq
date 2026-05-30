@@ -45,6 +45,12 @@ vi.mock('../../storage/sessions', () => ({
   getRecentSessions: vi.fn((_n: number) => sql.recent),
 }));
 
+// M5.3: compute now injects the TFLite matureInfer into routeSessionPlan. Stub it
+// to "model unavailable" (null) here so these tests stay native-free — the mature
+// path then falls back to warming, exactly as on a device before the model loads.
+// matureInfer's own decode logic is covered in services/ml/__tests__/matureInfer.test.ts.
+vi.mock('../../ml/matureInfer', () => ({ matureInfer: () => null }));
+
 import {
   TASK_ESTIMATE_BUFFER,
   hourBucket,
