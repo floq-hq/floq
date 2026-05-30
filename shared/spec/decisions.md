@@ -360,6 +360,44 @@ The DONE-vs-end-early distinction is the user's **intent**, not the elapsed time
 
 **Revisit:** if beta feedback flags travel weirdness — add a one-day grace period (the cheapest fix) before considering per-user time-zone fields.
 
+### L23 — Consented, anonymized telemetry for model improvement (amends L2; adopts O11 Option 2)
+
+**Date locked:** 2026-05-30
+**Decision:** **Amends L2.** Behavioral data may leave the device **only** with the user's explicit, opt-in consent, **fully anonymized**, and **solely** to improve the timer model. This adopts O11's **Option 2** to give the mature regime real training fuel — the synthetic M5.3 model can only relearn the cold-start formula, so it can't beat it without real outcomes. L2's core stands otherwise: **inference is still 100% on-device; nothing leaves the device by default.**
+
+**Amended L2 (supersedes the original "no behavioral data leaves device"):**
+> Behavioral data leaves the device only with explicit, opt-in user consent, fully anonymized (no uid, no PII, no task titles), and only as ML training samples for model improvement. Inference remains on-device; no server inference.
+
+**What is uploaded — the anonymized training sample.** A new **top-level** collection `training_samples/{autoId}` (NOT under `users/{uid}` — deliberately unlinked to any account). Each doc is exactly:
+- `features: number[13]` — the model's normalized input vector (`ml/MODEL_SPEC.md`): normalized floats, no free text.
+- `focus_score`, `actual_focus_minutes`, `planned_focus_minutes` — scalar outcomes.
+- `task_completed: boolean` — **did this session lead to finishing the task?** Resolved on the recovery screen (L19 — task completion is the explicit Mark-task-done tap there, *after* the session is saved). This is a far stronger outcome label than focus minutes — "did this recommendation produce task completion?" is what a v2 model should optimize for. Defaults `false`; set `true` if the task is marked done in this session's recovery flow. Captured now (expensive to backfill later).
+- `regime` + `model_version` — provenance. **`model_version` is REQUIRED** (never optional → no dirty/missing values when this data is analyzed months later): `cold → 'formula-v1'`, `warming → 'warming-v1'`, `mature → MODEL_VERSION` (e.g. `'v1'`). `client_version` too.
+- `created_at` — server timestamp.
+- **NEVER:** uid, email, display name, task title, task id, or any free text. **L4 (task titles never leave the device) is unchanged and reinforced.**
+
+**Non-re-identification commitment.** "Truly anonymous" is a legal claim (GDPR) that holds only while we honor it: **Floq commits to never attempting to re-identify training samples or correlate them with user accounts.** This is a binding policy, not just an implementation detail — it is what keeps `training_samples` out of "personal data" scope.
+
+**Why top-level + anonymized (not `users/{uid}/...`):** truly-anonymized data is both the most private option AND the legally cleanest — anonymous data is not personal data, so there is no per-user record to erase (the right-to-be-forgotten concern is moot — nothing is linked to a person). Trade-off accepted: we cannot dedupe or delete an individual's samples (there is no individual). Acceptable for the beta.
+
+**Consent model:**
+- `settings.telemetryConsent`, **default OFF** (opt-in, never opt-out). Lives in `useSettingsStore` / MMKV, mirroring L15's `backgroundPolicy`.
+- **Capture-vs-upload split:** the feature vector is captured into local SQLite on every session (on-device, L2-clean, unconditional). **Upload is gated on consent at session-save time** — only sessions completed while consent is ON ever egress; no backfill of pre-consent local data.
+- Toggle UI = a Settings switch (Mustafa, S-task). **Copy must be deliberate about revocation** — a user toggling OFF expects "delete my data," but anonymous samples are mathematically unlinkable, so there is nothing to delete. State it plainly, not evasively:
+  - ON copy: *"Help improve Floq's timer — share anonymized session data. No task names ever leave your device."*
+  - OFF/revocation copy: *"Already-shared data is anonymous and can't be traced back to you. Turning this off stops future sessions from being shared."*
+  (Saying this up front avoids angry support tickets and a harder privacy review later.)
+
+**Security rules.** `training_samples` is **create-only** for authenticated clients with strict shape validation (only the allowed keys; `features` a 13-length list); **no read/update/delete** from any client. Retraining export is offline via the Firebase Admin SDK (service account, bypasses rules) — no cloud function, stays on Spark (L13 pattern).
+
+**Mature model stays dormant until real data exists.** Until a v2 is retrained on collected samples, the mature regime falls back to the warming blend (`MATURE_MODEL_ACTIVE = false` in `matureInfer`) — we do not route real users to the synthetic placeholder while collecting the data to replace it (O11: "lead with the warming blend").
+
+**Supersedes / cross-refs:** amends **L2** (the absolute → consented/anonymized); adopts+resolves **O11 Option 2** (building the pipeline is now unblocked; a public "beats the formula" claim still needs a validated v2 on real data); **L4** unchanged + reinforced; pairs with **L18**'s Phase-B amendment (same L2/L4 fault line).
+
+**Revisit before public launch:** Cloud Function + App Check for attested anti-spam writes on the create-only collection, a retention policy, and an in-app "what we collect" explainer.
+
+**Implementation:** consent setting + `services/telemetry/trainingSample.ts` (anonymized, consent-gated writer) + `training_samples` rules + local capture (SQLite migration 004 + `SessionPlan.features`). The retrain pipeline (`backend/export_training.py` + `ml/training/v2.py`) is deferred until samples accumulate.
+
 ---
 
 ## Open decisions — must resolve by end of W1
@@ -432,6 +470,8 @@ Moved to Locked — see **L17**. Outcome: recovery is **skippable, not hard-enfo
 **Notes:** MVP keeps (a). The derivation is isolated to `hourBucket()` behind `computeSessionPlan`'s `ctx` in `mobile/services/session/compute.ts`, so (b) can replace it without touching the frozen cold-start formula or S3.0. The frozen `time_match_mod` constants (1.0 / 0.85) are unaffected either way — only the bucket-derivation method changes.
 
 ### O11 — Timer-model flywheel vs. L2 (zero data egress)
+
+**UPDATE 2026-05-30 — Option 2 adopted → see Locked L23.** The MVP descope (Option 3, below) stood through W5; going into the beta we adopt **Option 2 (consented, anonymized telemetry)**, written as Locked **L23** which amends L2. This entry is retained for the full options analysis; L23 is the decision of record.
 
 **Must resolve by:** Post-MVP — before any retraining pipeline or public claim that the mature model "beats the formula." The MVP resolution is chosen below, so this is non-blocking for W5.
 **Raised by:** Mohamed, 2026-05-29.

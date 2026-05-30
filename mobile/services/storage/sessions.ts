@@ -9,6 +9,7 @@
 
 import { getDb } from '../../models/db';
 import { writeSession } from '../session/distraction';
+import { enqueueTrainingSample } from './trainingOutbox';
 import type { CompletedSession } from '../session/types';
 import type { SessionPlan } from '../timer';
 
@@ -228,6 +229,10 @@ export function saveCompletedSession(s: CompletedSession): void {
   void writeSession(s).catch(() => {
     // swallowed: SQLite already holds the truth; offline/signed-out is fine.
   });
+  // L23: stage the anonymized ML training sample locally (L2-clean — stays on
+  // device). The consent-gated upload flush is a separate concern; this only
+  // captures. No-op when the plan carries no feature vector.
+  enqueueTrainingSample(s);
 }
 
 /** Wipe ALL session history + its distractions, in one transaction. Called from

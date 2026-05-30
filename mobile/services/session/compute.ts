@@ -32,6 +32,8 @@ import type {
   TimerInputs,
 } from '../timer';
 import { routeSessionPlan } from '../ml/regimeRouter';
+import { matureInfer } from '../ml/matureInfer';
+import { encodeFeatures } from '../ml/featureVector';
 import { toOnboardingSeed } from '../onboarding/seed';
 import type { OnboardingAnswers } from '../onboarding/types';
 import type { Task } from '../tasks';
@@ -196,10 +198,11 @@ export function computeSessionPlan(
     context: { ...inputs.context, sessions_today: 0 },
   };
   // M5.4 — route through the regime engine (cold / warming blend / mature) by
-  // lifetime tenure instead of always cold-starting. No matureInfer is injected
-  // yet (M5.3 / TFLite), so mature-tenure users fall back to the warming blend
-  // (regime stamped 'warming') — the documented M5.2→M5.3 gap behavior.
-  const baseline = routeSessionPlan(noFatigueInputs, behavioral);
+  // lifetime tenure instead of always cold-starting. M5.3 injects the TFLite
+  // inferer for the mature regime; until the model is loaded (or if it fails),
+  // matureInfer returns null and routeSessionPlan falls back to the warming
+  // blend — the documented defensive path.
+  const baseline = routeSessionPlan(noFatigueInputs, behavioral, matureInfer);
 
   const { gapMin, prevBreak } = resolveRecoveryGap(ctx, recent);
   const fmod = fatigueMod(sessionsToday);
@@ -235,6 +238,10 @@ export function computeSessionPlan(
     focusMinutes: adjustedFocus,
     breakMinutes: adjustedBreak,
     regime: baseline.regime,
+    // L23: capture the model's input vector for the local training outbox.
+    // Encode the REAL context (full `inputs`, real sessions_today) — that's what
+    // a v2 model conditions on, not the no-fatigue baseline used for routing.
+    features: Array.from(encodeFeatures(inputs)),
   };
 
   if (typeof __DEV__ !== 'undefined' && __DEV__) {

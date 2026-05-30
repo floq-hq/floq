@@ -20,6 +20,8 @@ partnerships/{pairId}              ✅ Phase A (M7.0, per L18) — the 1:1 focus
 partner_invites/{inviteId}         ✅ Phase A (M7.0, per L18)
 
 llm_cache/{hash}                   Shared LLM result cache (🧪 M2.3)
+
+training_samples/{autoId}          🧪 Anonymized ML training samples (L23) — opt-in, create-only
 ```
 
 All timestamps are Firestore `Timestamp`; write server timestamps (`serverTimestamp()`), not client clocks.
@@ -133,3 +135,23 @@ Shared, derived cache of LLM task-parse results, keyed by an input hash (the has
 | `created_at` | Timestamp | ✅ | |
 
 **Access (rules land in M7.0):** a partner may READ the other's completed-session **summaries** + **scheduled** sessions (minutes / score / when) — **NEVER task titles** (L4 invariant holds). Partner visibility is **opt-in at pairing**, shown plainly, and revoked by ending the partnership (M7.0 acceptance). Phase A stays on-device-friendly; only Phase B (stranger-matching, out of MVP scope, conditional on the W8 market read) would require sharing derived data server-side. Until M7.0, `backend/firestore.rules` stays owner-only.
+
+## `training_samples/{autoId}` 🧪 (L23)
+
+Anonymized ML training samples for retraining the mature timer model. **Top-level + unlinked to any account on purpose** (anonymous, not personal data — see L23). **Opt-in only** (`settings.telemetryConsent`, default OFF); uploaded best-effort at session-save time **only while consent is ON**. Auto-id (no meaningful key).
+
+**Hard invariant: no identifiers, no free text.** No `uid`, no email, no display name, no task title, no task id — **L4 holds** (titles never leave the device). Only the normalized model input + scalar outcomes + version tags.
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `features` | number[13] | ✅ | normalized model input vector (`ml/MODEL_SPEC.md`) — floats only, no text |
+| `focus_score` | number | ✅ | realized outcome (training label); may be negative |
+| `actual_focus_minutes` | number | ✅ | realized focus minutes |
+| `planned_focus_minutes` | number | ✅ | the plan's suggestion |
+| `task_completed` | boolean | ✅ | did the session finish the task? Resolved on the recovery screen (L19, *after* save) — the strongest outcome label. Defaults `false`; `true` if Mark-task-done is tapped in this session's recovery flow |
+| `regime` | `'cold' \| 'warming' \| 'mature'` | ✅ | which engine produced the plan |
+| `model_version` | string | ✅ | **always set** (no dirty data): `cold → 'formula-v1'`, `warming → 'warming-v1'`, `mature → MODEL_VERSION` |
+| `client_version` | string | ✅ | provenance |
+| `created_at` | Timestamp | ✅ | `serverTimestamp()` |
+
+**Access:** **create-only** for any authenticated client, with strict shape validation (only the keys above; `features` a 13-length list); **no read / update / delete** from clients (`backend/firestore.rules`). Retraining reads it offline via the Firebase Admin SDK (service account, bypasses rules) — no cloud function (Spark, L13 pattern). Cloud Function + App Check for attested anti-spam writes is a pre-public-launch upgrade (L23 revisit).

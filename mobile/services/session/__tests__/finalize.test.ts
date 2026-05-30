@@ -61,6 +61,20 @@ describe('finalizeOnDone', () => {
       computeFocusScore({ sessionMinutes: 30, distractionCount: 2, difficulty: 4 }),
     );
   });
+
+  it('carries the captured ML feature vector through to the record (L23)', () => {
+    const features = Array.from({ length: 13 }, (_, i) => i / 13);
+    const active = makeActive({
+      plan: { focusMinutes: 50, breakMinutes: 11, regime: 'warming', features },
+    });
+    const out = finalizeOnDone(active, 1_000_000 + 50 * 60_000, '1.0.0');
+    expect(out.plan.features).toEqual(features);
+  });
+
+  it('omits features when the plan had none (pre-L23 / restored session)', () => {
+    const out = finalizeOnDone(makeActive(), 1_000_000 + 50 * 60_000, '1.0.0');
+    expect(out.plan.features).toBeUndefined();
+  });
 });
 
 describe('finalizeOnAbandon', () => {
