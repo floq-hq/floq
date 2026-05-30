@@ -15,8 +15,6 @@
 
 import type { CompletedSession } from '../session/types';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
 /** Epoch-ms of device-local midnight on the day containing `ts`. */
 function localMidnight(ts: number): number {
   const d = new Date(ts);
@@ -45,9 +43,17 @@ function nextDayMidnight(midnightMs: number): number {
 
 /** Start of the rolling 7-day window: device-local midnight 6 days ago. Today
  *  + the previous 6 days = 7 distinct calendar days, inclusive. Exported so
- *  the query hook can hand the same start time to SQL. */
+ *  the query hook can hand the same start time to SQL.
+ *
+ *  Walks `prevDayMidnight` ×6 rather than subtracting `6 * DAY_MS` (audit #28):
+ *  the naive subtraction lands 1h off on a DST-transition week (the same
+ *  calendar-aware reasoning already documented on `prevDayMidnight` and used by
+ *  `currentStreak`), wrongly pulling edge sessions in/out of the weekly score a
+ *  couple of times a year. */
 export function weekStartMs(now: number = Date.now()): number {
-  return localMidnight(now) - 6 * DAY_MS;
+  let cursor = localMidnight(now);
+  for (let i = 0; i < 6; i++) cursor = prevDayMidnight(cursor);
+  return cursor;
 }
 
 /** Mean focus score across sessions ended within the rolling 7-day window.

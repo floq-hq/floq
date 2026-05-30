@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { CompletedSession } from '../../session/types';
 import {
@@ -38,6 +38,42 @@ describe('weekStartMs', () => {
   it('returns device-local midnight 6 days before the day of `now`', () => {
     const expected = new Date(2026, 4, 20, 0, 0, 0).getTime(); // 6 days before May 26
     expect(weekStartMs(NOON)).toBe(expected);
+  });
+});
+
+// audit #28 — `weekStartMs` must land on LOCAL MIDNIGHT even when the rolling
+// 7-day window spans a DST transition. Forcing a DST-observing zone (America/
+// New_York; honored at runtime by Node 13+) is the only way to exercise the bug
+// — under a non-DST runner TZ (e.g. UTC CI) both the old and new code agree, so
+// this would pass vacuously without the override.
+describe('weekStartMs across a DST boundary', () => {
+  const realTZ = process.env.TZ;
+  beforeAll(() => {
+    process.env.TZ = 'America/New_York';
+  });
+  afterAll(() => {
+    process.env.TZ = realTZ;
+  });
+
+  it('spring-forward: window ending after the lost hour starts at 00:00, not 23:00', () => {
+    // NY springs forward 2026-03-08 02:00→03:00 (loses an hour). A window ending
+    // Wed Mar 11 steps back through it; the old `now − 6*DAY_MS` lands at Mar 4
+    // 23:00 instead of Mar 5 00:00.
+    const now = new Date(2026, 2, 11, 12, 0, 0).getTime(); // Mar 11 2026, noon ET
+    const start = new Date(weekStartMs(now));
+    expect(start.getHours()).toBe(0);
+    expect(start.getMonth()).toBe(2); // March
+    expect(start.getDate()).toBe(5); // 6 calendar days before Mar 11
+  });
+
+  it('fall-back: window ending after the gained hour starts at 00:00, not 01:00', () => {
+    // NY falls back 2026-11-01 02:00→01:00 (gains an hour). A window ending
+    // Wed Nov 4 steps back through it; the old subtraction lands at Oct 29 01:00.
+    const now = new Date(2026, 10, 4, 12, 0, 0).getTime(); // Nov 4 2026, noon ET
+    const start = new Date(weekStartMs(now));
+    expect(start.getHours()).toBe(0);
+    expect(start.getMonth()).toBe(9); // October
+    expect(start.getDate()).toBe(29); // 6 calendar days before Nov 4
   });
 });
 
