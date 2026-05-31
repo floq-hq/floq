@@ -6,7 +6,12 @@
 // to this store. The store imports the persist service; never the reverse.
 
 import { create } from 'zustand';
-import { clearSettings, loadSettings, saveSettings } from '../services/settings/persist';
+import {
+  applyRemoteSettings,
+  clearSettings,
+  loadSettings,
+  saveSettings,
+} from '../services/settings/persist';
 import { DEFAULT_SETTINGS, type BackgroundPolicy, type Settings } from '../services/settings/types';
 
 interface SettingsState {
@@ -18,6 +23,9 @@ interface SettingsState {
   setTelemetryConsent: (consent: boolean) => void;
   setBreakReminderEnabled: (enabled: boolean) => void;
   setSessionStartReminderEnabled: (enabled: boolean) => void;
+  /** Adopt a settings blob pulled from another device (settingsSync) — persists
+   *  via the no-mirror path so it doesn't loop back up. */
+  applyRemote: (settings: Settings, updatedAtMs: number) => void;
   reset: () => void;
 }
 
@@ -39,6 +47,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
       commit({ ...get().settings, breakReminderEnabled: enabled }),
     setSessionStartReminderEnabled: (enabled) =>
       commit({ ...get().settings, sessionStartReminderEnabled: enabled }),
+
+    applyRemote: (settings, updatedAtMs) => {
+      applyRemoteSettings(settings, updatedAtMs);
+      set({ settings, hydrated: true });
+    },
 
     reset: () => {
       clearSettings();
