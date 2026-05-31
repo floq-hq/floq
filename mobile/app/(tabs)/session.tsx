@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button, Card, Text } from '../../components/ui';
 import { TaskSummary } from '../../components/TaskSummary';
+import { TabHeader, tabHeaderTopPadding } from '../../components/TabHeader';
 import { PhaseJourney } from '../../components/session/PhaseJourney';
 import { regimeLabel, restedClause, windowClause } from '../../components/home/copy';
 import { FirstSessionFramingCard } from '../../components/FirstSessionFramingCard';
@@ -54,8 +55,12 @@ export default function SessionTab() {
 
   return (
     <View
-      style={[styles.root, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 16 }]}
+      style={[
+        styles.root,
+        { paddingTop: tabHeaderTopPadding(insets.top), paddingBottom: insets.bottom + 16 },
+      ]}
     >
+      <TabHeader title="Session" />
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}

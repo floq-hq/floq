@@ -22,7 +22,7 @@ import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
 import { Text } from '../../components/ui';
-import { OfflineIndicator } from '../../components/OfflineIndicator';
+import { TabHeader, TAB_PADDING, tabHeaderTopPadding } from '../../components/TabHeader';
 import { HeroScore } from '../../components/stats/HeroScore';
 import { SummaryCards } from '../../components/stats/SummaryCards';
 import { PersonalBest } from '../../components/stats/PersonalBest';
@@ -58,27 +58,20 @@ export default function StatsTab() {
   }, [queryClient]);
 
   return (
-    <ScrollView
-      style={styles.root}
-      contentContainerStyle={[
-        styles.content,
-        { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 32 },
-      ]}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          tintColor={theme.accent}
-        />
-      }
-    >
-      <View style={styles.headerRow}>
-        <Text variant="title">Stats</Text>
-        {/* S4.3: hidden while online; no layout shift when it appears. */}
-        <OfflineIndicator />
-      </View>
-
-      <HeroScore />
+    <View style={[styles.root, { paddingTop: tabHeaderTopPadding(insets.top) }]}>
+      <TabHeader title="Stats" />
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={theme.accent}
+          />
+        }
+      >
+        <HeroScore />
 
       <SummaryCards />
 
@@ -95,13 +88,15 @@ export default function StatsTab() {
       <SessionList onSelectSession={(s) => setShareCard(toCardData(s))} />
 
       <SessionCardModal data={shareCard} onClose={() => setShareCard(null)} />
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
-  content: { paddingHorizontal: 24, gap: 16 },
+  root: { flex: 1, paddingHorizontal: TAB_PADDING },
+  scroll: { flex: 1 },
+  content: { gap: 16 },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -12,7 +12,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   MenuRow,
   MenuSection,
-  Text,
   UserIcon,
   SunIcon,
   TimerIcon,
@@ -23,17 +22,14 @@ import {
   CapIcon,
 } from '../../components/ui';
 import { ProfileHeader } from '../../components/profile/ProfileHeader';
-import { useTheme } from '../../theme';
+import { TabHeader, TAB_PADDING, tabHeaderTopPadding } from '../../components/TabHeader';
 
 export default function MoreTab() {
-  const theme = useTheme();
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top + 12 }]}>
-      <View style={styles.header}>
-        <Text variant="title">More</Text>
-      </View>
+    <View style={[styles.root, { paddingTop: tabHeaderTopPadding(insets.top) }]}>
+      <TabHeader title="More" />
 
       <ScrollView contentContainerStyle={styles.body}>
         <ProfileHeader />
@@ -63,7 +59,6 @@ export default function MoreTab() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, paddingHorizontal: 24 },
-  header: { marginBottom: 16 },
+  root: { flex: 1, paddingHorizontal: TAB_PADDING },
   body: { gap: 28, paddingBottom: 32 },
 });

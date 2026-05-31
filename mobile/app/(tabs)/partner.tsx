@@ -13,23 +13,27 @@
 import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '../../components/ui';
+import { TabHeader, TAB_PADDING, tabHeaderTopPadding } from '../../components/TabHeader';
 import { useTheme } from '../../theme';
 
 export default function PartnerTab() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   return (
-    <View style={[styles.root, { paddingTop: insets.top + 56 }]}>
-      <Text variant="title">Partner</Text>
-      <Text variant="body" color={theme.textMuted} style={styles.copy}>
-        Your focus partner lands soon. Solo is fully available today — nothing
-        here blocks the rest of the app.
-      </Text>
+    <View style={[styles.root, { paddingTop: tabHeaderTopPadding(insets.top) }]}>
+      <TabHeader title="Partner" />
+      <View style={styles.body}>
+        <Text variant="body" color={theme.textMuted} style={styles.copy}>
+          Your focus partner lands soon. Solo is fully available today — nothing
+          here blocks the rest of the app.
+        </Text>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, paddingHorizontal: 24, alignItems: 'center', gap: 8 },
+  root: { flex: 1, paddingHorizontal: TAB_PADDING },
+  body: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   copy: { textAlign: 'center' },
 });
