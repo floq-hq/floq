@@ -27,7 +27,7 @@ export default function PrivacyScreen() {
   return (
     <View style={[styles.root, { backgroundColor: theme.bg }]}>
       <ScreenHeader title="Privacy & data" />
-      <ScrollView contentContainerStyle={styles.body}>
+      <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         <View style={[styles.card, { backgroundColor: theme.bgElevated, borderColor: theme.border }]}>
           <View style={styles.toggleRow}>
             <Text variant="bodyMedium" style={styles.toggleLabel}>

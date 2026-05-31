@@ -35,7 +35,11 @@ export default function MoreTab() {
       <TabHeader title="More" />
 
       <View style={styles.scrollWrap}>
-        <ScrollView style={styles.scroll} contentContainerStyle={styles.body}>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.body}
+          showsVerticalScrollIndicator={false}
+        >
           <ProfileHeader />
 
         <MenuSection title="Account">

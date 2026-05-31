@@ -35,6 +35,7 @@ export function AuthShell({
           { paddingTop: insets.top + 56, paddingBottom: insets.bottom + 24 },
         ]}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
           <Text variant="title">{title}</Text>

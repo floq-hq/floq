@@ -9,7 +9,7 @@ export default function SessionSettingsScreen() {
   return (
     <View style={[styles.root, { backgroundColor: theme.bg }]}>
       <ScreenHeader title="Session" />
-      <ScrollView contentContainerStyle={styles.body}>
+      <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         <BackgroundPolicySetting />
       </ScrollView>
     </View>

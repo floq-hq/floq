@@ -141,7 +141,11 @@ export function BrainDumpModal({ onClose }: { onClose: () => void }) {
           )}
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={styles.body}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           {mode === 'input' ? (
             <View style={styles.gap}>
               <Text variant="body" color={theme.textMuted}>

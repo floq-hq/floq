@@ -9,7 +9,7 @@ export default function AppearanceScreen() {
   return (
     <View style={[styles.root, { backgroundColor: theme.bg }]}>
       <ScreenHeader title="Appearance" />
-      <ScrollView contentContainerStyle={styles.body}>
+      <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         <ThemeSetting />
       </ScrollView>
     </View>

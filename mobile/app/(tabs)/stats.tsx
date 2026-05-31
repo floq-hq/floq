@@ -63,6 +63,7 @@ export default function StatsTab() {
       <View style={styles.scrollWrap}>
         <ScrollView
           style={styles.scroll}
+          showsVerticalScrollIndicator={false}
           contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}
           refreshControl={
             <RefreshControl

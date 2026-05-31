@@ -19,7 +19,7 @@ export default function AboutScreen() {
   return (
     <View style={[styles.root, { backgroundColor: theme.bg }]}>
       <ScreenHeader title="About" />
-      <ScrollView contentContainerStyle={styles.body}>
+      <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         <View style={styles.identity}>
           <Text variant="title">Floq</Text>
           <Text variant="caption" color={theme.textMuted}>
