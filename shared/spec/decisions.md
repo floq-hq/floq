@@ -398,6 +398,23 @@ The DONE-vs-end-early distinction is the user's **intent**, not the elapsed time
 
 **Implementation:** consent setting + `services/telemetry/trainingSample.ts` (anonymized, consent-gated writer) + `training_samples` rules + local capture (SQLite migration 004 + `SessionPlan.features`). The retrain pipeline (`backend/export_training.py` + `ml/training/v2.py`) is deferred until samples accumulate.
 
+### L24 — iOS "Sign in with Apple" capability is manually managed (EAS auto-sync disables it)
+
+**Date locked:** 2026-05-31
+**Decision:** The iOS provisioning profile for `com.floq.app` is **managed manually**, NOT via EAS's automatic capability management, because EAS Build's capability sync (eas-cli ~20) **disables the "Sign in with Apple" capability** on the App ID during a build — even with `ios.usesAppleSignIn: true` AND an explicit `ios.entitlements["com.apple.developer.applesignin"] = ["Default"]` in `app.json` (both are present and required, but were not sufficient). The disabled capability yields a provisioning profile without the `com.apple.developer.applesignin` entitlement, so the Xcode signing step fails ("provisioning profile doesn't include the Sign In with Apple capability"). Operationalizes the Apple half of **L13**.
+
+**Symptom / how to confirm:** after a failed build, the App ID in the Apple Developer portal shows "Sign In with Apple" **unchecked again** — EAS turned it off during its sync. Builds 5–7 (2026-05-30) failed this way before the fix.
+
+**The procedure that works (build #8, 2026-05-31 — runtime `1.1.0`):**
+1. Enable "Sign In with Apple" on the App ID (portal → Identifiers → `com.floq.app`).
+2. Portal → Profiles → **App Store** profile for `com.floq.app` against the existing distribution cert → download the `.mobileprovision` (this one includes the capability).
+3. `eas credentials -p ios` → production → **credentials.json: Download** (gets EAS's dist-cert `.p12`) → replace the profile path with the downloaded good `.mobileprovision` → **Upload** back to EAS.
+4. `eas build -p ios --profile production --auto-submit` → **answer "No"** to "Do you want to log in to your Apple account?". This is the key: it makes EAS use the stored profile **as-is and skip the capability sync** that disables it. **Do NOT use `--non-interactive`** for this build — it can reuse a cached Apple session and re-sync.
+
+**Standing rule:** **every future iOS production build must answer "No" to the Apple-login prompt**, or EAS re-disables the capability and the build breaks again. If the cert/profile is ever regenerated, repeat steps 1–3.
+
+**Revisit:** if a future eas-cli version fixes auto-capability detection for Sign in with Apple, this manual management can be dropped. Runbook detail: `docs/dogfooding.md`.
+
 ---
 
 ## Open decisions — must resolve by end of W1

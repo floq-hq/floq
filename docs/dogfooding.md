@@ -80,10 +80,29 @@ eas submit -p ios --latest
 
 ---
 
-## Now-unblocked by the $99 membership (separate task)
+## ⚠️ iOS builds & the "Sign in with Apple" capability (decisions.md L24)
 
-**Apple Sign-In** was deferred in `decisions.md` L13 until the membership was
-active. It's now buildable but NOT done yet — it needs: install
-`expo-apple-authentication`, add `ios.usesAppleSignIn: true` to app.json, add Apple
-as a Firebase auth provider, and implement the commented-out flow in
-`services/firebase/auth.ts`. Track separately; not required for a TestFlight build.
+**Apple Sign-In is implemented** (`signInWithApple`, the native Apple button, `apple_id` in the user doc — shipped in build #8). But there is a **standing build gotcha** that breaks every iOS build if you forget it:
+
+EAS Build's automatic capability sync **disables "Sign in with Apple" on the App ID** during the build (even though `app.json` has both `ios.usesAppleSignIn: true` and `ios.entitlements["com.apple.developer.applesignin"] = ["Default"]`). The generated provisioning profile then lacks the entitlement and the Xcode signing step fails:
+> Provisioning profile … doesn't include the Sign In with Apple capability.
+
+**The profile is therefore managed MANUALLY. For every iOS production build:**
+
+```bash
+cd mobile
+eas build -p ios --profile production --auto-submit
+#  "Do you want to log in to your Apple account?"  →  No    ← REQUIRED
+```
+Answering **No** makes EAS use the stored profile **as-is** and skip the capability sync that disables it. **Never** use `--non-interactive` for the iOS production build (a cached Apple session can re-sync and re-disable the capability).
+
+**If the profile is missing/expired/regenerated** (one-time setup, repeat if it breaks):
+1. Apple Developer portal → Identifiers → `com.floq.app` → enable **Sign In with Apple** → Save.
+2. Portal → Profiles → **App Store** profile for `com.floq.app` against the existing distribution cert → **download** the `.mobileprovision`.
+3. `eas credentials -p ios` → production → **credentials.json → Download** (pulls EAS's dist-cert `.p12`) → replace the profile path with the downloaded good `.mobileprovision` → **Upload** back to EAS.
+4. Build with the **No**-to-Apple-login step above.
+
+> The runtimeVersion bumped to **1.1.0** with the Apple-Sign-In build (native change). OTA updates now target 1.1.0; the older 1.0.0 builds are frozen.
+
+### Still required for Apple Sign-In to *function* at runtime
+Enable Apple in **Firebase Console → Authentication → Sign-in method → Apple** with the **Services ID / Team ID / Key ID / .p8** (separate from the build). Until then, tapping the Apple button errors at the Firebase step (Google + email keep working).
