@@ -32,13 +32,18 @@ function makeSession(over: Partial<CompletedSession> = {}): CompletedSession {
   };
 }
 
+/** Enqueue with consent ON (the common case for the take/flush tests). */
+function enq(over: Partial<CompletedSession> = {}): void {
+  enqueueTrainingSample(makeSession(over), true);
+}
+
 beforeEach(() => {
   resetExpoSqliteFake();
 });
 
 describe('enqueueTrainingSample', () => {
   it('stages an anonymized row with the captured features + outcomes', () => {
-    enqueueTrainingSample(makeSession({ endedAt: 5000 }));
+    enq({ endedAt: 5000 });
     // settled via grace (single old row): readable.
     const [s] = takeSettledUnuploaded(5000 + 60 * 60 * 1000 + 1);
     expect(s.sessionId).toBe('s1');
@@ -54,33 +59,49 @@ describe('enqueueTrainingSample', () => {
   it('is a no-op when the plan carries no feature vector', () => {
     enqueueTrainingSample(
       makeSession({ plan: { focusMinutes: 50, breakMinutes: 11, regime: 'cold' } }),
+      true,
     );
     expect(takeSettledUnuploaded(Number.MAX_SAFE_INTEGER)).toEqual([]);
   });
 
   it('stamps model_version from the regime (cold → formula-v1)', () => {
-    enqueueTrainingSample(
-      makeSession({
-        endedAt: 5000,
-        plan: { focusMinutes: 51, breakMinutes: 11, regime: 'cold', features: FEATURES },
-      }),
-    );
+    enq({
+      endedAt: 5000,
+      plan: { focusMinutes: 51, breakMinutes: 11, regime: 'cold', features: FEATURES },
+    });
     expect(takeSettledUnuploaded(5000 + 60 * 60 * 1000 + 1)[0].modelVersion).toBe('formula-v1');
   });
 
   it('re-enqueueing the same id preserves a task_completed already set', () => {
-    enqueueTrainingSample(makeSession({ endedAt: 5000 }));
+    enq({ endedAt: 5000 });
     setTaskCompleted('s1');
-    enqueueTrainingSample(makeSession({ endedAt: 5000, focusScore: 99 })); // re-save
+    enq({ endedAt: 5000, focusScore: 99 }); // re-save
     const [s] = takeSettledUnuploaded(5000 + 60 * 60 * 1000 + 1);
     expect(s.taskCompleted).toBe(true); // not reset by the re-enqueue
     expect(s.focusScore).toBe(99); // other fields do update
   });
 });
 
+describe('consent gating (L23 no-backfill)', () => {
+  it('a sample captured while consent was OFF is NEVER eligible to upload', () => {
+    enqueueTrainingSample(makeSession({ id: 'pre', endedAt: 1000 }), false);
+    // even aged well past the grace window, an un-consented capture is excluded.
+    expect(takeSettledUnuploaded(1000 + 60 * 60 * 1000 + 1)).toEqual([]);
+  });
+
+  it('only consented-at-capture rows flush; pre-consent rows stay local', () => {
+    enqueueTrainingSample(makeSession({ id: 'pre', endedAt: 1000 }), false); // captured pre-consent
+    enqueueTrainingSample(makeSession({ id: 'post', endedAt: 2000 }), true); // captured after opting in
+    // 'pre' is settled (older) but un-consented → excluded; 'post' aged past grace → eligible.
+    expect(
+      takeSettledUnuploaded(2000 + 60 * 60 * 1000 + 1).map((s) => s.sessionId),
+    ).toEqual(['post']);
+  });
+});
+
 describe('setTaskCompleted', () => {
   it('flips task_completed and is a safe no-op for an unknown id', () => {
-    enqueueTrainingSample(makeSession({ endedAt: 5000 }));
+    enq({ endedAt: 5000 });
     setTaskCompleted('nope'); // no throw
     setTaskCompleted('s1');
     expect(takeSettledUnuploaded(5000 + 60 * 60 * 1000 + 1)[0].taskCompleted).toBe(true);
@@ -89,15 +110,15 @@ describe('setTaskCompleted', () => {
 
 describe('takeSettledUnuploaded', () => {
   it('treats a row as settled once a strictly-newer session exists', () => {
-    enqueueTrainingSample(makeSession({ id: 'old', endedAt: 1000 }));
-    enqueueTrainingSample(makeSession({ id: 'new', endedAt: 2000 }));
+    enq({ id: 'old', endedAt: 1000 });
+    enq({ id: 'new', endedAt: 2000 });
     // now well within the grace window, so only the newer-exists rule applies.
     const settled = takeSettledUnuploaded(2000).map((s) => s.sessionId);
     expect(settled).toEqual(['old']); // 'new' is the latest → held back
   });
 
   it('settles the latest row once it ages past the grace window', () => {
-    enqueueTrainingSample(makeSession({ id: 'solo', endedAt: 1000 }));
+    enq({ id: 'solo', endedAt: 1000 });
     expect(takeSettledUnuploaded(1000).map((s) => s.sessionId)).toEqual([]); // newest + fresh
     expect(
       takeSettledUnuploaded(1000 + 60 * 60 * 1000 + 1).map((s) => s.sessionId),
@@ -105,8 +126,8 @@ describe('takeSettledUnuploaded', () => {
   });
 
   it('excludes already-uploaded rows', () => {
-    enqueueTrainingSample(makeSession({ id: 'old', endedAt: 1000 }));
-    enqueueTrainingSample(makeSession({ id: 'new', endedAt: 2000 }));
+    enq({ id: 'old', endedAt: 1000 });
+    enq({ id: 'new', endedAt: 2000 });
     markUploaded('old');
     expect(takeSettledUnuploaded(2000)).toEqual([]); // 'old' uploaded, 'new' not settled
   });
@@ -114,8 +135,8 @@ describe('takeSettledUnuploaded', () => {
 
 describe('deleteAllTrainingSamples', () => {
   it('empties the outbox (sign-out teardown)', () => {
-    enqueueTrainingSample(makeSession({ id: 'a', endedAt: 1000 }));
-    enqueueTrainingSample(makeSession({ id: 'b', endedAt: 2000 }));
+    enq({ id: 'a', endedAt: 1000 });
+    enq({ id: 'b', endedAt: 2000 });
     deleteAllTrainingSamples();
     expect(takeSettledUnuploaded(Number.MAX_SAFE_INTEGER)).toEqual([]);
   });

@@ -243,15 +243,18 @@ export function countSessionsAllTime(): number {
  *  source of truth, Firestore is a best-effort async mirror. A failed mirror
  *  must NOT lose the local write or throw — reconcile on a later sync. The S3.3
  *  Done handler (app/focus.tsx) should call THIS instead of writeSession. */
-export function saveCompletedSession(s: CompletedSession): void {
+export function saveCompletedSession(s: CompletedSession, consented = false): void {
   insertSession(s);
   void writeSession(s).catch(() => {
     // swallowed: SQLite already holds the truth; offline/signed-out is fine.
   });
   // L23: stage the anonymized ML training sample locally (L2-clean — stays on
-  // device). The consent-gated upload flush is a separate concern; this only
-  // captures. No-op when the plan carries no feature vector.
-  enqueueTrainingSample(s);
+  // device). `consented` = was telemetry consent ON at capture; the egress flush
+  // ships only consented rows, so enabling consent later never backfills earlier
+  // sessions. Caller passes the live consent (storage can't read the settings
+  // store — circular). Defaults false (conservative: won't egress). No-op when
+  // the plan carries no feature vector.
+  enqueueTrainingSample(s, consented);
 }
 
 /** Wipe ALL session history + its distractions, in one transaction. Called from

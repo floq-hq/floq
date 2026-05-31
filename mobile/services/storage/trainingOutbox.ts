@@ -43,18 +43,23 @@ interface OutboxRow {
 
 /** Stage a session's anonymized training sample locally (called at session save,
  *  L23). No-op if the plan carries no captured feature vector (e.g. a restore of
- *  a pre-L23 session). Idempotent on session id (INSERT OR REPLACE). */
-export function enqueueTrainingSample(s: CompletedSession): void {
+ *  a pre-L23 session). Idempotent on session id (INSERT OR REPLACE).
+ *
+ *  `consented` records whether telemetry consent was ON at CAPTURE time — the
+ *  egress flush uploads only consented rows, so enabling consent later never
+ *  backfills pre-consent sessions (L23). The caller passes the live consent
+ *  (storage must not read the settings store — that would be a circular import). */
+export function enqueueTrainingSample(s: CompletedSession, consented: boolean): void {
   const features = s.plan.features;
   if (!features || features.length === 0) return;
   getDb().runSync(
     `INSERT OR REPLACE INTO training_outbox
        (session_id, features, focus_score, actual_focus_minutes,
         planned_focus_minutes, regime, model_version, task_completed,
-        created_at, uploaded)
+        created_at, uploaded, consented)
      VALUES (?, ?, ?, ?, ?, ?, ?,
         COALESCE((SELECT task_completed FROM training_outbox WHERE session_id = ?), 0),
-        ?, 0)`,
+        ?, 0, ?)`,
     s.id,
     JSON.stringify(Array.from(features)),
     s.focusScore,
@@ -64,6 +69,7 @@ export function enqueueTrainingSample(s: CompletedSession): void {
     modelVersionFor(s.plan.regime),
     s.id, // preserve a task_completed already set by an earlier recovery tap
     s.endedAt,
+    consented ? 1 : 0,
   );
 }
 
@@ -90,6 +96,7 @@ export function takeSettledUnuploaded(
             planned_focus_minutes, regime, model_version, task_completed, created_at
        FROM training_outbox
       WHERE uploaded = 0
+        AND consented = 1
         AND ( created_at < (SELECT MAX(created_at) FROM training_outbox)
               OR created_at <= ? )
       ORDER BY created_at ASC`,

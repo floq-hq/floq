@@ -10,6 +10,11 @@ const { writeSessionMock } = vi.hoisted(() => ({
   writeSessionMock: vi.fn((..._a: unknown[]) => Promise.resolve()),
 }));
 vi.mock('../distraction', () => ({ writeSession: writeSessionMock }));
+// restore.ts reads telemetry consent (to stamp the captured sample); mock the
+// store so the test doesn't pull the settings store → firestoreMirror → firebase.
+vi.mock('../../../stores/useSettingsStore', () => ({
+  useSettingsStore: { getState: () => ({ settings: { telemetryConsent: false } }) },
+}));
 
 // react-native-mmkv has a native module that won't load in node — fake it with
 // a plain in-memory map so activeSessionPersist works under vitest.

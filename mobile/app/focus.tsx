@@ -55,6 +55,7 @@ import { queryClient } from '../services/queryClient';
 import { statsKeys } from '../services/stats/useStats';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useActiveSessionStore } from '../stores/useActiveSessionStore';
+import { useSettingsStore } from '../stores/useSettingsStore';
 import { useTheme } from '../theme';
 
 // App version stamped on the session record. From app.json; move to
@@ -231,7 +232,9 @@ export default function SessionScreen() {
     // failure swallowed (offline / signed-out is fine — SQLite already holds
     // the truth).
     const completed = finalizeOnDone(snapshot, doneAt, CLIENT_VERSION);
-    saveCompletedSession(completed);
+    // L23: stamp whether telemetry consent is ON now, so only consented sessions
+    // ever egress (no backfill when consent is enabled later, incl. cross-device).
+    saveCompletedSession(completed, useSettingsStore.getState().settings.telemetryConsent);
 
     // Refresh the Stats screen immediately (S4.1 wiring of M4.3 handoff). Without
     // this the just-completed session wouldn't show up until staleTime (30s).
