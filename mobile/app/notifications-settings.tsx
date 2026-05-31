@@ -9,7 +9,7 @@ export default function NotificationsSettingsScreen() {
   return (
     <View style={[styles.root, { backgroundColor: theme.bg }]}>
       <ScreenHeader title="Notifications" />
-      <ScrollView contentContainerStyle={styles.body}>
+      <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         <NotificationSetting />
       </ScrollView>
     </View>

@@ -74,7 +74,7 @@ export default function AccountScreen() {
   return (
     <View style={[styles.root, { backgroundColor: theme.bg }]}>
       <ScreenHeader title="My account" />
-      <ScrollView contentContainerStyle={styles.body}>
+      <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         <View style={styles.identity}>
           <Avatar photoURL={user?.photoURL} name={name} size={88} />
 

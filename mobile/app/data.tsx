@@ -96,7 +96,7 @@ export default function DataScreen() {
   return (
     <View style={[styles.root, { backgroundColor: theme.bg }]}>
       <ScreenHeader title="Your data" />
-      <ScrollView contentContainerStyle={styles.body}>
+      <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         <Card
           title="Your focus data"
           body="Your sessions, focus scores, streaks, and task names live on your device and sync across your own devices when you’re signed in."
