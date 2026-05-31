@@ -24,6 +24,7 @@
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import type { PreferredTime } from '../timer';
+import { useSettingsStore } from '../../stores/useSettingsStore';
 
 type ReminderKind = 'break' | 'session-start';
 
@@ -115,6 +116,12 @@ let breakScheduleInFlight: Promise<unknown> = Promise.resolve();
  *  never stack. Prompts for permission on first use (a session just ended — a
  *  deliberate action, not app open). Silent no-op if permission is denied. */
 export async function scheduleBreakReminder(breakMinutes: number): Promise<void> {
+  // S4.2 pref gate: when break reminders are off, never schedule — and clear any
+  // pending one so a previously-scheduled reminder doesn't still fire.
+  if (!useSettingsStore.getState().settings.breakReminderEnabled) {
+    await cancelBreakReminder();
+    return;
+  }
   const work = (async () => {
     if (!(await ensurePermission())) return;
     await cancelByKind('break');
@@ -151,6 +158,11 @@ export async function scheduleSessionStartReminder(
   preferred: PreferredTime,
   { request = true }: { request?: boolean } = {},
 ): Promise<void> {
+  // S4.2 pref gate: off → never schedule + clear any pending daily reminder.
+  if (!useSettingsStore.getState().settings.sessionStartReminderEnabled) {
+    await cancelByKind('session-start');
+    return;
+  }
   if (!(await ensurePermission(request))) return;
   await cancelByKind('session-start');
   await Notifications.scheduleNotificationAsync({
@@ -165,4 +177,11 @@ export async function scheduleSessionStartReminder(
       minute: 0,
     },
   });
+}
+
+/** Cancel the daily session-start reminder. Called when the user turns the
+ *  preference off so the already-scheduled daily reminder stops firing
+ *  immediately (turning it back on reschedules on the next app open). */
+export async function cancelSessionStartReminder(): Promise<void> {
+  await cancelByKind('session-start');
 }

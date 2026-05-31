@@ -9,6 +9,7 @@ const { state, mocks } = vi.hoisted(() => {
     requestResult: { granted: true },
     scheduled: [] as { identifier: string; content: { data?: { kind?: string } } }[],
     nextId: 0,
+    prefs: { breakReminderEnabled: true, sessionStartReminderEnabled: true },
   };
   const mocks = {
     setNotificationHandler: vi.fn(),
@@ -36,6 +37,11 @@ vi.mock('expo-notifications', () => ({
   SchedulableTriggerInputTypes: { TIME_INTERVAL: 'timeInterval', DAILY: 'daily' },
   AndroidImportance: { DEFAULT: 3 },
 }));
+// The schedulers now gate on notification prefs (S4.2). Mock the store (avoids
+// pulling MMKV into the node env) and drive the prefs via the hoisted state.
+vi.mock('../../../stores/useSettingsStore', () => ({
+  useSettingsStore: { getState: () => ({ settings: state.prefs }) },
+}));
 
 import {
   preferredTimeToHour,
@@ -51,7 +57,30 @@ beforeEach(() => {
   state.requestResult = { granted: true };
   state.scheduled = [];
   state.nextId = 0;
+  state.prefs = { breakReminderEnabled: true, sessionStartReminderEnabled: true };
   vi.clearAllMocks(); // clears call history; keeps the closures above as impls
+});
+
+describe('notification preference gating (S4.2)', () => {
+  it('does not schedule a break reminder when the pref is off (and clears any pending)', async () => {
+    state.permission = { granted: true, canAskAgain: false };
+    state.prefs.breakReminderEnabled = false;
+    await scheduleBreakReminder(5);
+    expect(mocks.scheduleNotificationAsync).not.toHaveBeenCalled();
+  });
+
+  it('does not schedule the daily reminder when the pref is off', async () => {
+    state.permission = { granted: true, canAskAgain: false };
+    state.prefs.sessionStartReminderEnabled = false;
+    await scheduleSessionStartReminder('morning');
+    expect(mocks.scheduleNotificationAsync).not.toHaveBeenCalled();
+  });
+
+  it('schedules normally when prefs are on (default)', async () => {
+    state.permission = { granted: true, canAskAgain: false };
+    await scheduleBreakReminder(5);
+    expect(mocks.scheduleNotificationAsync).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('pure helpers', () => {

@@ -72,3 +72,20 @@ export const BackIcon = ({ color, size }: IconProps) => (
     <Path d="M19 12H5M12 19l-7-7 7-7" stroke={color} strokeWidth={SW} strokeLinecap="round" strokeLinejoin="round" />
   </Svg>
 );
+
+/** Notifications (bell). */
+export const BellIcon = ({ color, size }: IconProps) => (
+  <Svg {...base(size)}>
+    <Path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" stroke={color} strokeWidth={SW} strokeLinecap="round" strokeLinejoin="round" />
+    <Path d="M13.7 21a2 2 0 0 1-3.4 0" stroke={color} strokeWidth={SW} strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+/** Data (database cylinder) — the "your data" row. */
+export const DatabaseIcon = ({ color, size }: IconProps) => (
+  <Svg {...base(size)}>
+    <Path d="M4 5c0 1.66 3.58 3 8 3s8-1.34 8-3-3.58-3-8-3-8 1.34-8 3Z" stroke={color} strokeWidth={SW} strokeLinejoin="round" />
+    <Path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5" stroke={color} strokeWidth={SW} strokeLinecap="round" strokeLinejoin="round" />
+    <Path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3" stroke={color} strokeWidth={SW} strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);

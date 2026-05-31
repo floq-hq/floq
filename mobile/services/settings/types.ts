@@ -15,9 +15,17 @@ export interface Settings {
    *  (opt-in, never opt-out). Gates the egress in services/telemetry — local
    *  capture (training_outbox) is unconditional; only UPLOAD is consent-gated. */
   telemetryConsent: boolean;
+  /** Notification preferences (S4.2), default ON. Gate the schedulers in
+   *  services/notifications — when off, the reminder is never scheduled and any
+   *  pending one is cancelled. Flat booleans (not nested) so loadSettings's
+   *  shallow merge fills each independently for blobs from an older build. */
+  breakReminderEnabled: boolean;
+  sessionStartReminderEnabled: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   backgroundPolicy: 'forgiving',
   telemetryConsent: false,
+  breakReminderEnabled: true,
+  sessionStartReminderEnabled: true,
 };
