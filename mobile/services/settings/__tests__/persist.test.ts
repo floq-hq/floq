@@ -1,12 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // In-memory MMKV fake (hoisted so the vi.mock factory can close over it).
-const { mmkvStore } = vi.hoisted(() => ({ mmkvStore: new Map<string, string>() }));
+const { mmkvStore } = vi.hoisted(() => ({ mmkvStore: new Map<string, string | number>() }));
 
 vi.mock('react-native-mmkv', () => ({
   createMMKV: () => ({
     getString: (k: string) => mmkvStore.get(k),
-    set: (k: string, v: string) => {
+    getNumber: (k: string) => mmkvStore.get(k),
+    set: (k: string, v: string | number) => {
       mmkvStore.set(k, v);
     },
     remove: (k: string) => {
@@ -15,11 +16,27 @@ vi.mock('react-native-mmkv', () => ({
   }),
 }));
 
-import { SETTINGS_KEY, saveSettings, loadSettings, clearSettings } from '../persist';
+// The Firestore mirror is fired by saveSettings — mock it so the persist test
+// stays a pure local-storage test (and never loads firebase).
+const { mirrorSettings } = vi.hoisted(() => ({ mirrorSettings: vi.fn(() => Promise.resolve()) }));
+vi.mock('../firestoreMirror', () => ({ mirrorSettings }));
+
+import {
+  SETTINGS_KEY,
+  SETTINGS_UPDATED_AT_KEY,
+  saveSettings,
+  loadSettings,
+  loadSettingsUpdatedAt,
+  applyRemoteSettings,
+  clearSettings,
+} from '../persist';
 import { DEFAULT_SETTINGS } from '../types';
+
+const full = (over: Partial<typeof DEFAULT_SETTINGS> = {}) => ({ ...DEFAULT_SETTINGS, ...over });
 
 beforeEach(() => {
   mmkvStore.clear();
+  mirrorSettings.mockClear();
 });
 
 describe('loadSettings', () => {
@@ -28,10 +45,13 @@ describe('loadSettings', () => {
     expect(loadSettings().backgroundPolicy).toBe('forgiving');
   });
 
-  it('round-trips what saveSettings wrote', () => {
-    saveSettings({ backgroundPolicy: 'strict', telemetryConsent: false, breakReminderEnabled: true, sessionStartReminderEnabled: true });
-    expect([...mmkvStore.keys()]).toEqual([SETTINGS_KEY]);
-    expect(loadSettings()).toEqual({ backgroundPolicy: 'strict', telemetryConsent: false, breakReminderEnabled: true, sessionStartReminderEnabled: true });
+  it('round-trips what saveSettings wrote (and stamps the LWW clock + fires the mirror)', () => {
+    saveSettings(full({ backgroundPolicy: 'strict' }));
+    expect(loadSettings()).toEqual(full({ backgroundPolicy: 'strict' }));
+    expect(mmkvStore.has(SETTINGS_KEY)).toBe(true);
+    expect(mmkvStore.has(SETTINGS_UPDATED_AT_KEY)).toBe(true);
+    expect(loadSettingsUpdatedAt()).toBeGreaterThan(0);
+    expect(mirrorSettings).toHaveBeenCalledTimes(1);
   });
 
   it('falls back to default on a corrupt blob', () => {
@@ -50,11 +70,21 @@ describe('loadSettings', () => {
   });
 });
 
+describe('applyRemoteSettings (pull-down, no mirror)', () => {
+  it('writes the blob + the remote LWW clock WITHOUT firing the mirror', () => {
+    applyRemoteSettings(full({ telemetryConsent: true }), 12345);
+    expect(loadSettings().telemetryConsent).toBe(true);
+    expect(loadSettingsUpdatedAt()).toBe(12345);
+    expect(mirrorSettings).not.toHaveBeenCalled(); // remote data must not loop back up
+  });
+});
+
 describe('clearSettings', () => {
-  it('removes the blob', () => {
-    saveSettings({ backgroundPolicy: 'strict', telemetryConsent: false, breakReminderEnabled: true, sessionStartReminderEnabled: true });
+  it('removes both the blob and the LWW clock', () => {
+    saveSettings(full({ backgroundPolicy: 'strict' }));
     clearSettings();
     expect(mmkvStore.has(SETTINGS_KEY)).toBe(false);
+    expect(mmkvStore.has(SETTINGS_UPDATED_AT_KEY)).toBe(false);
     expect(loadSettings()).toEqual(DEFAULT_SETTINGS);
   });
 });

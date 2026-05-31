@@ -20,6 +20,7 @@ import { FloqTabBar, type TabKey } from '../../components/FloqTabBar';
 import { useSessionSync } from '../../services/sync/useSessionSync';
 import { useTaskSync } from '../../services/sync/useTaskSync';
 import { useDataWipeSync } from '../../services/sync/useDataWipeSync';
+import { useSettingsSync } from '../../services/sync/useSettingsSync';
 import { useTelemetryFlush } from '../../services/sync/useTelemetryFlush';
 
 function AppTabBar({ state, navigation }: BottomTabBarProps) {
@@ -46,6 +47,9 @@ export default function TabsLayout() {
   useSessionSync();
   useTaskSync();
   useDataWipeSync();
+  // Account-wide app settings (background policy, notification prefs, telemetry
+  // consent) — last-write-wins across the user's devices.
+  useSettingsSync();
   // L23: best-effort upload of consent-gated, anonymized training samples.
   useTelemetryFlush();
 
