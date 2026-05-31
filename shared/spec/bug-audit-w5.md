@@ -4,14 +4,14 @@
 > **Method:** multi-agent sweep (8 dimensions × 3 rounds, loop-until-dry), every
 > finding cross-checked by 2 independent adversarial verifiers. `2/2` = both
 > verifiers confirmed; `1/2` = one confirmed, one skeptical (lower confidence).
-> **Status:** in progress — 2/32 fixed (both 🔴 HIGH, 2026-05-29). Remainder backlog for a dedicated fix session.
+> **Status:** in progress — **14/32 fixed**. The 2 🔴 HIGH (2026-05-29) + the entire **[MOHAMED]** backlog (2026-05-30, PRs #135/#136/#137: #13/#14/#15/#16/#17/#24/#26/#27/#28/#29/#30/#31). **Every remaining open item is [MUSTAFA] or [SHARED]** — no pure [MOHAMED] item is open. Remainder is Mustafa's frontend lane (+ 4 SHARED needing coordination).
 
 **Ownership legend**
 - **[MUSTAFA]** — frontend (`app/`, `components/`, stores, `services/{tasks,llm,share,onboarding,notifications}`, theme).
 - **[MOHAMED]** — `services/{timer,ml,session,storage}`, `firebase/auth`, `models/`, `services/stats/aggregations`. Hand off — Mustafa must not edit without Mohamed's approval.
 - **[SHARED]** — a Mustafa screen calling a Mohamed service; the two must coordinate.
 
-> 32 confirmed. Priority: 🔴 first, then the clearly-[MUSTAFA] 🟠 items; the [MOHAMED] items route to Mohamed (the sign-out session leak and restore-save inflation corrupt data — flag those loudest).
+> 32 confirmed. **Update 2026-05-31:** both 🔴 + all [MOHAMED] items are fixed (14/32). The 18 open items are all **[MUSTAFA]** (frontend) or **[SHARED]**. Remaining priority for Mustafa: the silent-failure 🟠 items (#4 dead Session START, #5 share, #6 task-queue crash) first; the 4 [SHARED] items (#9–#12) need a quick Mohamed sync (they touch auth/session/notifications). Nothing in the audit now blocks W7 partnership work on the Mohamed side.
 
 ---
 
@@ -74,16 +74,21 @@
   **Fix:** don't clear `restorable` on the Resume branch; let /focus take over.
 
 ### [MOHAMED] — hand off
-- [ ] **13. Phase pill shows "RECOVERY" while actively focusing in overrun** — `app/focus.tsx:142` (2/2)
+- [x] **13. Phase pill shows "RECOVERY" while actively focusing in overrun** — `app/focus.tsx:142` (2/2) ✅ fixed 2026-05-30 (#136)
   `phaseFor` returns `recovery` at `focusMinutes*60`; contradicts the L16 SuggestedStopMeter "stays Flow past suggested time" invariant. Fix in `app/focus.tsx` (clamp `recovery`→`flow` for display); **phases.ts stays frozen**.
-- [ ] **14. ⚠️ Sign-out leaks prior user's session history to the next account** — `services/firebase/auth.ts:158` + `services/storage/sessions.ts` (2/2)
+  **Done:** new pure `components/session/displayPhase.ts` clamps `recovery → flow` for the /focus pill only; `phases.ts` untouched.
+- [x] **14. ⚠️ Sign-out leaks prior user's session history to the next account** — `services/firebase/auth.ts:158` + `services/storage/sessions.ts` (2/2) ✅ fixed 2026-05-30 (#135)
   SQLite `sessions`/`distractions` never cleared on sign-out; reads have no uid filter → the next user's hero score, forecast, streak, best-session (carrying the prior user's private task title) + cold-start fatigue all include the prior user. **Security-relevant; NOT the deferred task-isolation item.** Fix: clear sessions+distractions on sign-out (mirror `deleteAllTasks`), or add uid column + filter.
-- [ ] **15. ⚠️ Restore-save writes wall-clock-inflated minutes into SQLite** — `services/session/finalize.ts:27` (2/2)
+  **Done:** new `deleteAllSessions()` (clears distractions + sessions in one txn) called in `signOut()` (auth.ts:218) alongside `deleteAllTrainingSamples()`. Per-user isolation (uid column) stays deferred; this closes the leak.
+- [x] **15. ⚠️ Restore-save writes wall-clock-inflated minutes into SQLite** — `services/session/finalize.ts:27` (2/2) ✅ fixed 2026-05-30 (#135)
   `finalizeOnAbandon` credits `minutesBetween(startedAt, now)`; app killed mid-session & reopened a day later → hundreds of minutes + inflated score persisted, skews stats forever. Fix: cap credited focus at planned length (or use a last-foreground timestamp).
-- [ ] **16. "Start next session" silently no-ops in production** — `app/recovery.tsx:136` (2/2)
+  **Done:** confined to the restore path — `restore.ts` caps `endedAt = min(now, startedAt + planned·60s)`. The live end-early path (`abandonSession`) and `finalize` are unchanged (a present user may legitimately overrun).
+- [x] **16. "Start next session" silently no-ops in production** — `app/recovery.tsx:136` (2/2) ✅ fixed 2026-05-30 (#137)
   `computeSessionPlan` throw only logged in `__DEV__`; prod = dead CTA. Fix: surface an error / route Home.
-- [ ] **17. `signInWithEmail` never ensures the user doc** — `services/firebase/auth.ts:89` (1/2)
+  **Done:** the throw now surfaces an inline error; Skip-recovery → Home stays the escape hatch.
+- [x] **17. `signInWithEmail` never ensures the user doc** — `services/firebase/auth.ts:89` (1/2) ✅ fixed 2026-05-30 (#137)
   Other two auth paths call `ensureUserDoc`; this one doesn't → doc can lack `privacy:'private'` (security default) + `has_seen_intro`. Fix: call `ensureUserDoc` after email sign-in.
+  **Done:** new shared `ensureUserDocBestEffort` wrapper now runs after email sign-in (and covers the Google path, #31).
 
 ---
 
@@ -96,16 +101,16 @@
 - [ ] **21. PersonalBest a11y label drops the "score" unit** — `components/stats/PersonalBest.tsx:96` (2/2). Visual shows `unit ?? 'score'`; label omits it when `unit` undefined. Fix: mirror the `?? 'score'` fallback in the label.
 - [ ] **22. Task mirror exceeds Firestore's 500-op batch** — `services/tasks/firestoreMirror.ts:32` (2/2). >500 tasks → `batch.commit()` rejects (swallowed), mirror diverges. Fix: chunk into ≤500-op batches.
 - [ ] **23. `/dev` route reachable in production builds** — `app/dev.tsx:16` (2/2). Auto-registers; not `__DEV__`-gated despite the comment. `floq://dev` shows internal harnesses in release. Fix: `if (!__DEV__) return <Redirect href="/home" />`.
-- [ ] **24. FloqTabBar indicator flashes off-screen-left on first paint** — `components/FloqTabBar.tsx:127` (1/2). `moveTo` runs before layout (`cellWidth=0`) → animates to x≈-15 then snaps. Fix: no-op `moveTo` until `cellWidth>0`. *(from the tab-bar PR, not S5.x/S6.0.)*
+- [x] **24. FloqTabBar indicator flashes off-screen-left on first paint** — `components/FloqTabBar.tsx:127` (1/2) ✅ fixed 2026-05-30 (#137). `moveTo` runs before layout (`cellWidth=0`) → animates to x≈-15 then snaps. Fix: no-op `moveTo` until `cellWidth>0`. *(from the tab-bar PR, not S5.x/S6.0.)* **Done:** pure `indicatorTranslateX` returns `null` until measured; `moveTo` no-ops pre-layout, seats instantly on first/rotated layout.
 - [ ] **25. Sign-out failure no feedback** — `app/(tabs)/more.tsx:22` (2/2). No catch around `signOut()`; if it rejects, nothing happens, the user stays signed in silently. Fix: try/catch + inline error.
 
 ### [MOHAMED]
-- [ ] **26. Deep-link plan with no task freezes timer at 00:00** — `app/focus.tsx:166` (2/2). Valid `plan` + missing task → early-return, clock never starts, live-looking UI stuck. Fix: extend the fallback view to `!plan || !task`.
-- [ ] **27. SuggestedStopMeter NaN width when `plannedFocusMinutes=0`** — `components/session/SuggestedStopMeter.tsx:47` (2/2). `0/0` → `'NaN%'`. Shielded by the 15-min clamp normally; a deep-linked `{focusMinutes:0}` reaches it. Fix: guard denominator or tighten `parsePlan`.
-- [ ] **28. `weekStartMs` 1h off across a DST boundary** — `services/stats/aggregations.ts:49` (2/2). Naive `localMidnight(now) - 6*DAY_MS` instead of the calendar-aware helper the file documents. Edge sessions wrongly in/out of weekly score a couple times/year. Fix: walk `prevDayMidnight` ×6.
-- [ ] **29. Recovery countdown misaligned ~8s vs the notification** — `app/recovery.tsx:99` (2/2). Countdown anchors to recovery-mount; notification scheduled at DONE; summary dwells 8s. Fix: anchor countdown to the DONE timestamp (forward via params).
-- [ ] **30. Break-reminder schedule/cancel race on fast skip** — `app/recovery.tsx:135` + `app/focus.tsx:229` (2/2). `void scheduleBreakReminder` not awaited; a fast Skip/Start-next can `cancel` before the schedule registers → notification survives into Session 2. Fix: await schedule, or tag by sessionId.
-- [ ] **31. Google sign-in shows error while actually signed in** — `app/(auth)/welcome.tsx:24` + `services/firebase/auth.ts:117` (2/2). `ensureUserDoc` failure after `signInWithCredential` shows "could not continue with Google" then the gate navigates the user in. Fix: make `ensureUserDoc` best-effort post-auth.
+- [x] **26. Deep-link plan with no task freezes timer at 00:00** — `app/focus.tsx:166` (2/2) ✅ fixed 2026-05-30 (#136). Valid `plan` + missing task → early-return, clock never starts, live-looking UI stuck. **Done:** fallback view now guards `!plan || !task`; normal start + Resume keep `task` non-null, so only a true no-task deep link hits the inert fallback.
+- [x] **27. SuggestedStopMeter NaN width when `plannedFocusMinutes=0`** — `components/session/SuggestedStopMeter.tsx:47` (2/2) ✅ fixed 2026-05-30 (#136). `0/0` → `'NaN%'`. **Done:** denominator guarded — a non-positive plan is immediate-overrun, so a full bar is consistent.
+- [x] **28. `weekStartMs` 1h off across a DST boundary** — `services/stats/aggregations.ts:49` (2/2) ✅ fixed 2026-05-30 (#137). Naive `localMidnight(now) - 6*DAY_MS` instead of the calendar-aware helper the file documents. **Done:** now walks the calendar-aware `prevDayMidnight` ×6 (DST tests forced to `America/New_York`).
+- [x] **29. Recovery countdown misaligned ~8s vs the notification** — `app/recovery.tsx:99` (2/2) ✅ fixed 2026-05-30 (#137). Countdown anchors to recovery-mount; notification scheduled at DONE; summary dwells 8s. **Done:** DONE timestamp now threads focus.tsx → summary → recovery and anchors the countdown.
+- [x] **30. Break-reminder schedule/cancel race on fast skip** — `app/recovery.tsx:135` + `app/focus.tsx:229` (2/2) ✅ fixed 2026-05-30 (#137). `void scheduleBreakReminder` not awaited; a fast Skip/Start-next can `cancel` before the schedule registers → notification survives into Session 2. **Done:** `cancelBreakReminder` now awaits the in-flight schedule before sweeping, so the cancel always lands after the notification registers.
+- [x] **31. Google sign-in shows error while actually signed in** — `app/(auth)/welcome.tsx:24` + `services/firebase/auth.ts:117` (2/2) ✅ fixed 2026-05-30 (#137). `ensureUserDoc` failure after `signInWithCredential` shows "could not continue with Google" then the gate navigates the user in. **Done:** shared `ensureUserDocBestEffort` wrapper makes the skeleton write best-effort post-auth.
 
 > Note: #16 and a near-duplicate at `recovery.tsx:135` ("Start next session no-op + break reminder already cancelled") are the same recovery start-next defect — fix once.
 
