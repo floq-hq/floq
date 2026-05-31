@@ -11,6 +11,7 @@
 // pipeline as DONE so a partial credits real focus (L16 invariant).
 
 import { saveCompletedSession } from '../storage/sessions';
+import { useSettingsStore } from '../../stores/useSettingsStore';
 import { finalizeOnAbandon } from './finalize';
 import {
   clearActiveSession,
@@ -68,7 +69,7 @@ export function resolveRestore(
     active.startedAt + active.plan.focusMinutes * 60_000,
   );
   const partial = finalizeOnAbandon(active, cappedEndedAt, CLIENT_VERSION);
-  saveCompletedSession(partial);
+  saveCompletedSession(partial, useSettingsStore.getState().settings.telemetryConsent);
   clearActiveSession();
   // We return the original ActiveSession (the in-flight shape the caller still
   // had in mind), not the CompletedSession — keeps the resolve API symmetric.
