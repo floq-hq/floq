@@ -2,7 +2,7 @@
   "expo": {
     "name": "floq",
     "slug": "floq",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "scheme": "floq",
     "orientation": "portrait",
     "icon": "./assets/icon-light.png",
@@ -36,6 +36,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.floq.app",
+      "usesAppleSignIn": true,
       "icon": {
         "light": "./assets/icon-light.png",
         "dark": "./assets/icon-dark.png"
