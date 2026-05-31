@@ -11,8 +11,13 @@ export const BACKGROUND_POLICIES: readonly BackgroundPolicy[] = ['forgiving', 's
 
 export interface Settings {
   backgroundPolicy: BackgroundPolicy;
+  /** L23: opt-in to share anonymized session data for ML training. Default OFF
+   *  (opt-in, never opt-out). Gates the egress in services/telemetry — local
+   *  capture (training_outbox) is unconditional; only UPLOAD is consent-gated. */
+  telemetryConsent: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   backgroundPolicy: 'forgiving',
+  telemetryConsent: false,
 };

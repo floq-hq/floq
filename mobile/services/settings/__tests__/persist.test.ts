@@ -29,9 +29,9 @@ describe('loadSettings', () => {
   });
 
   it('round-trips what saveSettings wrote', () => {
-    saveSettings({ backgroundPolicy: 'strict' });
+    saveSettings({ backgroundPolicy: 'strict', telemetryConsent: false });
     expect([...mmkvStore.keys()]).toEqual([SETTINGS_KEY]);
-    expect(loadSettings()).toEqual({ backgroundPolicy: 'strict' });
+    expect(loadSettings()).toEqual({ backgroundPolicy: 'strict', telemetryConsent: false });
   });
 
   it('falls back to default on a corrupt blob', () => {
@@ -52,7 +52,7 @@ describe('loadSettings', () => {
 
 describe('clearSettings', () => {
   it('removes the blob', () => {
-    saveSettings({ backgroundPolicy: 'strict' });
+    saveSettings({ backgroundPolicy: 'strict', telemetryConsent: false });
     clearSettings();
     expect(mmkvStore.has(SETTINGS_KEY)).toBe(false);
     expect(loadSettings()).toEqual(DEFAULT_SETTINGS);
