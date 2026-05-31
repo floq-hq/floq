@@ -10,7 +10,7 @@
 // Fire-and-forget: a failed mirror must never lose the local write or surface in
 // the UI. True two-way reconciliation (Firestore→SQLite) is a later milestone.
 
-import { doc, Timestamp, writeBatch } from 'firebase/firestore';
+import { doc, serverTimestamp, Timestamp, writeBatch } from 'firebase/firestore';
 import { auth } from '../firebase/auth';
 import { db } from '../firebase/init';
 import type { Task } from './types';
@@ -40,6 +40,11 @@ export async function mirrorTasks(prev: Task[], next: Task[]): Promise<void> {
       order: t.order,
       done: t.done,
       created_at: Timestamp.fromMillis(t.createdAt),
+      // Server-clock mutation marker. mirrorTasks re-writes EVERY current task on
+      // each change, so max(updated_at) across the queue is the last-mutation
+      // time — the last-write-wins key the pull-down (taskSync) compares. Server
+      // timestamp (not client ms) so cross-device LWW is immune to clock skew.
+      updated_at: serverTimestamp(),
     });
   }
 

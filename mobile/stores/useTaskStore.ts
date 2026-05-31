@@ -12,6 +12,7 @@
 
 import { create } from 'zustand';
 import {
+  applyRemoteTasks,
   clearTasks,
   hiddenCount,
   insert,
@@ -42,6 +43,9 @@ interface TaskState {
   reorder: (fromOrder: number, toOrder: number) => void;
   markDone: (id: string) => void; // drops + auto-promotes next (W2)
   removeTask: (id: string) => void;
+  /** Apply a newer remote queue from cross-device sync (taskSync) — persists +
+   *  sets state WITHOUT re-mirroring (the data came from Firestore). */
+  applyRemote: (tasks: Task[], updatedAtMs: number) => void;
   reset: () => void;
 }
 
@@ -86,6 +90,13 @@ export const useTaskStore = create<TaskState>((set, get) => {
     reorder: (fromOrder, toOrder) => commit(queueReorder(get().tasks, fromOrder, toOrder)),
     markDone: (id) => commit(queueMarkDone(get().tasks, id)),
     removeTask: (id) => commit(queueRemoveTask(get().tasks, id)),
+
+    // Pull-down path (taskSync): persist via the no-mirror applyRemoteTasks (data
+    // came FROM Firestore — re-mirroring would loop), then reflect in state.
+    applyRemote: (tasks, updatedAtMs) => {
+      applyRemoteTasks(tasks, updatedAtMs);
+      set({ tasks, hydrated: true });
+    },
 
     reset: () => {
       clearTasks();
