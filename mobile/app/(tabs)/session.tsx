@@ -1,9 +1,12 @@
 /**
  * Session tab — the LAUNCHPAD. This is where you start a focus session, so it
  * shows what Home (the hub) doesn't: the task you're about to focus on AND the
- * adaptive recommendation for it (the hero ring + the "why" — regime, time-of-
- * day window, rested state). Starting opens the full-screen /focus takeover via
- * the shared useStartSession flow; the tab bar disappears for the session.
+ * SHAPE of the upcoming session — a Phase Journey preview (Struggle → Release →
+ * Flow, proportioned to the recommendation) plus the "why" (regime, time-of-day
+ * window, rested state). The recommendation RING is Home's; duplicating it here
+ * wasted the launchpad's identity (decisions.md L25). Starting opens the
+ * full-screen /focus takeover via the shared useStartSession flow; the tab bar
+ * disappears for the session.
  *
  * The recommendation is a PREVIEW of computeSessionPlan (read, never changed).
  * Onboarding answers are self-healed here too (a dev Fast Refresh can null the
@@ -16,7 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button, Card, Text } from '../../components/ui';
 import { TaskSummary } from '../../components/TaskSummary';
-import { HeroRing } from '../../components/home/HeroRing';
+import { PhaseJourney } from '../../components/session/PhaseJourney';
 import { regimeLabel, restedClause, windowClause } from '../../components/home/copy';
 import { FirstSessionFramingCard } from '../../components/FirstSessionFramingCard';
 import { useStartSession } from '../../components/session/useStartSession';
@@ -73,7 +76,11 @@ export default function SessionTab() {
 
             {plan ? (
               <View style={styles.hero}>
-                <HeroRing focusMinutes={plan.focusMinutes} breakMinutes={plan.breakMinutes} />
+                <PhaseJourney
+                  focusMinutes={plan.focusMinutes}
+                  breakMinutes={plan.breakMinutes}
+                  regime={plan.regime}
+                />
                 <Text variant="caption" color={theme.textMuted}>
                   {regimeLabel(plan.regime)}
                 </Text>
