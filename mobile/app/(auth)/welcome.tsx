@@ -12,7 +12,13 @@ import { router } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, Text } from '../../components/ui';
-import { GoogleSignInCancelledError, signInWithGoogle } from '../../services/firebase';
+import { SocialButtons } from '../../components/auth/SocialButtons';
+import {
+  AppleSignInCancelledError,
+  GoogleSignInCancelledError,
+  signInWithApple,
+  signInWithGoogle,
+} from '../../services/firebase';
 import { useTheme } from '../../theme';
 
 export default function Welcome() {
@@ -30,6 +36,20 @@ export default function Welcome() {
     } catch (e) {
       if (e instanceof GoogleSignInCancelledError) return; // dismissed — no-op
       setError('Could not continue with Google. Try email instead.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onApple() {
+    setError(null);
+    setBusy(true);
+    try {
+      await signInWithApple();
+      router.replace('/'); // gate routes to onboarding or home
+    } catch (e) {
+      if (e instanceof AppleSignInCancelledError) return; // dismissed — no-op
+      setError('Could not continue with Apple. Try email instead.');
     } finally {
       setBusy(false);
     }
@@ -64,7 +84,7 @@ export default function Welcome() {
             {error}
           </Text>
         ) : null}
-        <Button label="Continue with Google" onPress={onGoogle} loading={busy} />
+        <SocialButtons onApple={onApple} onGoogle={onGoogle} busy={busy} />
         <Button
           label="Continue with email"
           variant="secondary"

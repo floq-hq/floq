@@ -32,6 +32,10 @@ const h = vi.hoisted(() => {
     gSignIn: vi.fn(),
     gSignOut: vi.fn(),
     isSuccess: vi.fn(),
+    appleCredential: vi.fn((x: unknown) => ({ __appleCred: x })),
+    appleSignIn: vi.fn(),
+    appleIsAvailable: vi.fn(() => Promise.resolve(true)),
+    digest: vi.fn(() => Promise.resolve('hashednonce')),
   };
 });
 
@@ -72,6 +76,23 @@ vi.mock('firebase/auth', () => ({
   onAuthStateChanged: h.onAuthStateChanged,
   getReactNativePersistence: vi.fn(() => ({ __persistence: true })),
   GoogleAuthProvider: { credential: h.credential },
+  OAuthProvider: class {
+    credential(x: unknown) {
+      return h.appleCredential(x);
+    }
+  },
+}));
+vi.mock('expo-apple-authentication', () => ({
+  isAvailableAsync: h.appleIsAvailable,
+  signInAsync: h.appleSignIn,
+  AppleAuthenticationScope: { FULL_NAME: 'fullName', EMAIL: 'email' },
+  AppleAuthenticationButtonType: { SIGN_IN: 0 },
+  AppleAuthenticationButtonStyle: { WHITE: 0, BLACK: 2 },
+}));
+vi.mock('expo-crypto', () => ({
+  randomUUID: () => 'uuid',
+  digestStringAsync: h.digest,
+  CryptoDigestAlgorithm: { SHA256: 'SHA-256' },
 }));
 vi.mock('@react-native-google-signin/google-signin', () => ({
   GoogleSignin: {
@@ -89,10 +110,12 @@ import {
   signInWithEmail,
   signInWithGoogle,
   signInWithApple,
+  isAppleAuthAvailable,
   signInWithPhone,
   signOut,
   AuthNotConfiguredError,
   GoogleSignInCancelledError,
+  AppleSignInCancelledError,
 } from '../auth';
 
 beforeEach(() => vi.clearAllMocks());
@@ -230,16 +253,48 @@ describe('signOut', () => {
   });
 });
 
-describe('scaffolded providers (decisions.md L13)', () => {
-  it('signInWithApple throws AuthNotConfiguredError("apple")', async () => {
-    await expect(signInWithApple()).rejects.toMatchObject({
-      name: 'AuthNotConfiguredError',
-      method: 'apple',
+describe('signInWithApple', () => {
+  it('signs in via Apple → Firebase and ensures the user doc with apple_id', async () => {
+    h.appleSignIn.mockResolvedValue({
+      identityToken: 'idtok',
+      user: 'apple-uid',
+      email: 'a@b.com',
+      fullName: { givenName: 'Ada' },
     });
-    await expect(signInWithApple()).rejects.toBeInstanceOf(AuthNotConfiguredError);
+    h.signInCredential.mockResolvedValue({
+      user: { uid: 'u1', email: 'a@b.com', displayName: 'Ada' },
+    });
+
+    const user = await signInWithApple();
+
+    expect(user).toMatchObject({ uid: 'u1' });
+    // nonce: Apple gets the SHA-256 hash, Firebase the raw value.
+    expect(h.appleSignIn).toHaveBeenCalledWith(
+      expect.objectContaining({ nonce: 'hashednonce' }),
+    );
+    expect(h.appleCredential).toHaveBeenCalledWith(
+      expect.objectContaining({ idToken: 'idtok', rawNonce: 'uuiduuid' }),
+    );
+    expect(h.ensureUserDoc).toHaveBeenCalledWith(
+      { uid: 'u1', email: 'a@b.com', displayName: 'Ada' },
+      expect.objectContaining({ apple_id: 'apple-uid', display_name: 'Ada' }),
+    );
   });
 
+  it('maps a dismissed sheet (ERR_REQUEST_CANCELED) to AppleSignInCancelledError', async () => {
+    h.appleSignIn.mockRejectedValue(Object.assign(new Error('cancelled'), { code: 'ERR_REQUEST_CANCELED' }));
+    await expect(signInWithApple()).rejects.toBeInstanceOf(AppleSignInCancelledError);
+  });
+
+  it('isAppleAuthAvailable reflects the native availability check', async () => {
+    h.appleIsAvailable.mockResolvedValue(true);
+    expect(await isAppleAuthAvailable()).toBe(true);
+  });
+});
+
+describe('scaffolded providers (decisions.md L13)', () => {
   it('signInWithPhone throws AuthNotConfiguredError("phone")', async () => {
     await expect(signInWithPhone()).rejects.toMatchObject({ method: 'phone' });
+    await expect(signInWithPhone()).rejects.toBeInstanceOf(AuthNotConfiguredError);
   });
 });
