@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FloqTabBar, type TabKey } from '../../components/FloqTabBar';
 import { useSessionSync } from '../../services/sync/useSessionSync';
 import { useTaskSync } from '../../services/sync/useTaskSync';
+import { useTelemetryFlush } from '../../services/sync/useTelemetryFlush';
 import { useTheme } from '../../theme';
 
 function AppTabBar({ state, navigation }: BottomTabBarProps) {
@@ -43,6 +44,8 @@ export default function TabsLayout() {
   // sessions (+ refresh stats) and the task queue (last-write-wins) in real time.
   useSessionSync();
   useTaskSync();
+  // L23: best-effort upload of consent-gated, anonymized training samples.
+  useTelemetryFlush();
 
   return (
     <Tabs
