@@ -24,6 +24,7 @@ import { useTaskStore } from '../stores/useTaskStore';
 import { useActiveSessionStore } from '../stores/useActiveSessionStore';
 import type { OnboardingAnswers } from '../services/onboarding';
 import { getRestorableSession } from '../services/session/restore';
+import { ensureHasSeenIntroHydrated } from '../services/intro/seen';
 import type { ActiveSession } from '../services/session/types';
 import { RestoreSessionPrompt } from '../components/session/RestoreSessionPrompt';
 import { useTheme } from '../theme';
@@ -68,6 +69,12 @@ export default function Index() {
   useEffect(() => {
     if (!settingsHydrated) hydrateSettings();
   }, [settingsHydrated, hydrateSettings]);
+
+  // One-shot: seed the local has_seen_intro flag from Firestore so a returning
+  // user on a NEW device doesn't re-see the one-time framing card (W6-sweep).
+  useEffect(() => {
+    if (user) void ensureHasSeenIntroHydrated(user.uid);
+  }, [user]);
 
   // Hydrate the task store + the active-session store at boot, NOT on Home
   // mount, so a Resume from the RestoreSessionPrompt that routes straight to

@@ -32,6 +32,7 @@ export async function mirrorSettings(settings: Settings): Promise<void> {
     {
       settings: {
         backgroundPolicy: settings.backgroundPolicy,
+        themeOverride: settings.themeOverride,
         telemetryConsent: settings.telemetryConsent,
         breakReminderEnabled: settings.breakReminderEnabled,
         sessionStartReminderEnabled: settings.sessionStartReminderEnabled,
