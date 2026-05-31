@@ -1,150 +1,339 @@
 /**
- * Home (S2.3) — the focus launchpad. Shows exactly one task (title + est-minutes
- * + difficulty pills), a "+N hidden" hint for the rest of the queue, the streak
- * top-right, and the primary START SESSION action. Empty queue → a brain-dump
- * nudge instead.
+ * Home (Home redesign v2) — the HUB. Manage your queue + see your data here;
+ * START a session on the Session tab. A pinned header (wordmark + today's date +
+ * your avatar) stays put while the body scrolls and fades at the edges.
  *
- * Reads the queue from useTaskStore (M2.5) via selectTopTask / selectHiddenCount
- * — one visible task at a time (session-flow.md). The "+" and the empty-state
- * CTA both open the brain-dump modal (S2.4 fleshes that screen out).
+ *  • Queued     — greeting, a prominent streak, the weekly FOCUS SCORE hero, a
+ *                 today stat row, a tappable UP NEXT card, and a "Go to Session
+ *                 →" CTA + "+" add square.
+ *  • Returning  — welcome-back + yesterday recap, brain-dump / add CTAs.
+ *  • First-time — calm visual + the baseline framing.
  *
- * START SESSION runs the shared start-session flow (useStartSession): compute the
- * plan for the top task (computeSessionPlan, M3.3), gate the one-time framing card
- * (S2.5), then open the full-screen /focus session. The Session tab launchpad
- * starts a session the exact same way.
- *
- * Lives at /home (not (tabs)/index) because app/index.tsx is the auth gate and
- * already owns "/"; the gate redirects an onboarded user straight here.
+ * The recommendation ring lives on the Session screen; Home shows the focus
+ * SCORE. design-system.md: calm / anti-gamified / single teal accent / no emoji.
  */
 import { useEffect } from 'react';
 import { router } from 'expo-router';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Button, Card, Pill, Text } from '../../components/ui';
+
+import { Avatar, Button, Card, ScrollFade, Text, Wordmark } from '../../components/ui';
 import { OfflineIndicator } from '../../components/OfflineIndicator';
-import { StreakCounter } from '../../components/StreakCounter';
-import { FirstSessionFramingCard } from '../../components/FirstSessionFramingCard';
-import { useStartSession } from '../../components/session/useStartSession';
+import { TaskSummary } from '../../components/TaskSummary';
+import { FirstTimeVisual } from '../../components/home/FirstTimeVisual';
+import { HeroRing } from '../../components/home/HeroRing';
+import { coachLine, formatLastSession, greeting } from '../../components/home/copy';
 import { selectHiddenCount, selectTopTask, useTaskStore } from '../../stores/useTaskStore';
-import { useTheme } from '../../theme';
+import { useOnboardingStore } from '../../stores/useOnboardingStore';
+import { useCurrentUser } from '../../services/firebase';
+import { useUserProfile } from '../../services/firebase/userProfile';
+import { useSessionRecommendation } from '../../services/session/useSessionRecommendation';
+import { useNowContext } from '../../services/session/nowContext';
+import {
+  useCurrentStreak,
+  useLastSessionEndedAt,
+  useSessionCount,
+  useYesterdayRecap,
+} from '../../services/stats/useStats';
+import { useTheme, type Theme } from '../../theme';
+
+const PADDING = 20;
 
 export default function Home() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+
+  const { user } = useCurrentUser();
+  const { data: profile } = useUserProfile();
+  const name = profile?.displayName || user?.displayName || 'Floq user';
+
   const hydrated = useTaskStore((s) => s.hydrated);
   const hydrate = useTaskStore((s) => s.hydrate);
+  const onboardingHydrated = useOnboardingStore((s) => s.hydrated);
+  const hydrateOnboarding = useOnboardingStore((s) => s.hydrate);
   const topTask = useTaskStore(selectTopTask);
   const hiddenCount = useTaskStore(selectHiddenCount);
-  const { onStart, launching, launchError, showIntro, onIntroDismiss } = useStartSession(topTask);
 
-  // Load the persisted queue once on first mount (mirrors the onboarding gate).
+  const lifetime = useSessionCount().data ?? 0;
+  const streak = useCurrentStreak().data ?? 0;
+  const recap = useYesterdayRecap().data ?? null;
+  const lastEndedAt = useLastSessionEndedAt().data ?? null;
+  // The recommendation hero — a PREVIEW of computeSessionPlan for the up-next
+  // task (no task → no recommendation). The coach line reads its regime.
+  const plan = useSessionRecommendation(topTask).data ?? null;
+  const nowCtx = useNowContext().data ?? null;
+
+  const dateLabel = new Date().toLocaleDateString(undefined, {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  });
+
   useEffect(() => {
     if (!hydrated) void hydrate();
   }, [hydrated, hydrate]);
+  // Self-heal onboarding so the recommendation/coach line never blanks.
+  useEffect(() => {
+    if (!onboardingHydrated) void hydrateOnboarding();
+  }, [onboardingHydrated, hydrateOnboarding]);
 
   const openBrainDump = () => router.push('/brain-dump');
+  const openQueue = () => router.push('/task-queue');
+  const goToSession = () => router.navigate('/session');
+  const goToStats = () => router.navigate('/stats');
+  const openAccount = () => router.push('/account');
+
+  if (!hydrated) {
+    return <View style={styles.root} />;
+  }
+
+  const state: 'queued' | 'returning' | 'first' = topTask
+    ? 'queued'
+    : lifetime === 0
+      ? 'first'
+      : 'returning';
 
   return (
-    <View
-      style={[
-        styles.root,
-        { backgroundColor: theme.bg, paddingTop: insets.top + 12, paddingBottom: insets.bottom + 16 },
-      ]}
-    >
+    <View style={[styles.root, { paddingTop: insets.top + 10, paddingBottom: insets.bottom + 6 }]}>
+      {/* Pinned header — wordmark + today's date stay at the top while scrolling. */}
       <View style={styles.header}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Add tasks"
-          onPress={openBrainDump}
-          hitSlop={12}
-        >
-          <Text variant="title" color={theme.accent}>
-            +
+        <View>
+          <Wordmark />
+          <Text variant="caption" color={theme.textMuted} style={styles.date}>
+            {dateLabel}
           </Text>
-        </Pressable>
+        </View>
         <View style={styles.headerRight}>
-          {/* S4.3: renders only when offline (null otherwise — no layout shift). */}
           <OfflineIndicator />
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="More"
-            onPress={() => router.push('/more')}
-            hitSlop={12}
-          >
-            <Text variant="heading" color={theme.textMuted}>
-              {'⚙︎'}
-            </Text>
+          <Pressable onPress={openAccount} accessibilityRole="button" accessibilityLabel="Account" hitSlop={8}>
+            <Avatar photoURL={user?.photoURL} name={name} size={38} />
           </Pressable>
-          <StreakCounter />
         </View>
       </View>
 
-      <View style={styles.body}>
-        {topTask ? (
-          <View style={styles.taskBlock}>
-            <Card>
-              <Text variant="heading">{topTask.title}</Text>
-              <View style={styles.pills}>
-                <Pill label={`${topTask.estMinutes} min`} color={theme.textMuted} />
-                <Pill label={`Difficulty ${topTask.difficulty}/5`} color={theme.accent} />
-              </View>
-            </Card>
-            {hiddenCount > 0 ? (
+      <View style={styles.scrollWrap}>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={[
+            styles.scrollContent,
+            state === 'queued' ? styles.topAlign : styles.centerAlign,
+          ]}
+          showsVerticalScrollIndicator={false}
+        >
+          {state === 'queued' ? (
+            <>
+              <Text variant="heading">{greeting(Date.now())}</Text>
+
               <Pressable
-                onPress={() => router.push('/task-queue')}
-                hitSlop={8}
+                onPress={goToStats}
                 accessibilityRole="button"
-                accessibilityLabel={`${hiddenCount} more tasks — open the queue`}
+                accessibilityLabel={`${streak} day streak — see your stats`}
+                style={({ pressed }) => [
+                  styles.streakBanner,
+                  { backgroundColor: theme.accentMuted, opacity: pressed ? 0.7 : 1 },
+                ]}
               >
-                <Text variant="caption" color={theme.textMuted} style={styles.hidden}>
-                  +{hiddenCount} hidden
+                <Text variant="title" color={theme.accent}>
+                  {streak}
+                </Text>
+                <Text variant="bodyMedium">day streak</Text>
+                <View style={styles.flex1} />
+                <Text variant="body" color={theme.textMuted}>
+                  ›
                 </Text>
               </Pressable>
-            ) : null}
-          </View>
-        ) : (
-          <View style={styles.empty}>
-            <Text variant="title" style={styles.center}>
-              Nothing queued
-            </Text>
-            <Text variant="body" color={theme.textMuted} style={styles.center}>
-              Brain-dump what you need to do today.
-            </Text>
-          </View>
-        )}
+
+              {plan ? (
+                <View style={styles.hero}>
+                  <HeroRing focusMinutes={plan.focusMinutes} breakMinutes={plan.breakMinutes} />
+                  {nowCtx ? (
+                    <Text variant="body" color={theme.textMuted} style={styles.coach}>
+                      {coachLine(plan.regime, nowCtx)}
+                    </Text>
+                  ) : null}
+                </View>
+              ) : null}
+
+              <Pressable
+                onPress={openQueue}
+                accessibilityRole="button"
+                accessibilityLabel="Manage your task queue"
+              >
+                <Card>
+                  <View style={styles.upNextHead}>
+                    <Text variant="tiny" color={theme.textMuted} style={styles.kicker}>
+                      UP NEXT
+                    </Text>
+                    <Text variant="label" color={theme.accent}>
+                      {hiddenCount > 0 ? `+${hiddenCount} more ›` : 'Edit ›'}
+                    </Text>
+                  </View>
+                  <TaskSummary
+                    title={topTask!.title}
+                    difficulty={topTask!.difficulty}
+                    estMinutes={topTask!.estMinutes}
+                  />
+                </Card>
+              </Pressable>
+            </>
+          ) : null}
+
+          {state === 'returning' ? (
+            <View style={styles.block}>
+              <View style={styles.welcome}>
+                <Text variant="title">Welcome back</Text>
+                <Text variant="caption" color={theme.textMuted}>
+                  Day {streak}
+                  {lastEndedAt ? ` · last session ${formatLastSession(lastEndedAt, Date.now())}` : ''}
+                </Text>
+              </View>
+
+              {recap ? (
+                <Card>
+                  <Text variant="tiny" color={theme.textMuted} style={styles.kicker}>
+                    YESTERDAY
+                  </Text>
+                  <View style={styles.recapRow}>
+                    <StatCol theme={theme} value={recap.focusMinutes} label="min focused" center />
+                    <StatCol theme={theme} value={recap.sessions} label={recap.sessions === 1 ? 'session' : 'sessions'} center />
+                    <StatCol
+                      theme={theme}
+                      value={recap.distractions}
+                      label={recap.distractions === 1 ? 'distraction' : 'distractions'}
+                      center
+                    />
+                  </View>
+                </Card>
+              ) : null}
+            </View>
+          ) : null}
+
+          {state === 'first' ? (
+            <View style={styles.firstTime}>
+              <FirstTimeVisual />
+              <Text variant="title" style={styles.center}>
+                Welcome to Floq
+              </Text>
+              <Text variant="body" color={theme.textMuted} style={styles.center}>
+                Floq tunes the timer to your brain. Add what you want to focus on first — your first
+                session sets your baseline.
+              </Text>
+            </View>
+          ) : null}
+        </ScrollView>
+
+        {/* Soft fade where content scrolls under the header (top only — a bottom
+            fade read as a stray gradient above the CTA). */}
+        <ScrollFade edge="top" color={theme.bg} />
       </View>
 
-      {topTask ? (
-        <Button label="START SESSION" onPress={onStart} loading={launching} />
-      ) : (
-        <Button label="Brain-dump" onPress={openBrainDump} />
-      )}
-      {/* PR4: surface compute-time failures (onboarding missing / top task
-          disappeared) instead of leaving the button stuck on "launching"
-          forever. Cleared on screen re-focus. */}
-      {launchError ? (
-        <Text variant="caption" color={theme.danger} style={styles.launchError}>
-          {launchError}
-        </Text>
-      ) : null}
-
-      <FirstSessionFramingCard visible={showIntro} onDismiss={onIntroDismiss} />
+      <View style={styles.footer}>
+        {state === 'queued' ? (
+          <View style={styles.ctaRow}>
+            <Button label="Go to Session  →" onPress={goToSession} style={styles.ctaPrimary} />
+            <AddSquare theme={theme} onPress={openBrainDump} />
+          </View>
+        ) : null}
+        {state === 'returning' ? (
+          <View style={styles.ctaRow}>
+            <Button label="Brain-dump" onPress={openBrainDump} style={styles.ctaPrimary} />
+            <AddSquare theme={theme} onPress={openQueue} />
+          </View>
+        ) : null}
+        {state === 'first' ? (
+          <Button label="Brain-dump tasks" onPress={openBrainDump} />
+        ) : null}
+      </View>
     </View>
   );
 }
 
+/** A momentum/recap stat: a prominent value over a quiet label. Borderless. */
+function StatCol({
+  theme,
+  value,
+  label,
+  center,
+}: {
+  theme: Theme;
+  value: number;
+  label: string;
+  center?: boolean;
+}) {
+  return (
+    <View style={[styles.statCol, center && styles.centerItems]}>
+      <Text variant="title">{value}</Text>
+      <Text variant="caption" color={theme.textMuted} style={center && styles.center}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+/** Square add-task button beside the primary CTA — distinct neutral surface so
+ *  it reads as secondary to the teal CTA. */
+function AddSquare({ theme, onPress }: { theme: Theme; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel="Add tasks"
+      style={[styles.addSquare, { backgroundColor: theme.bgElevated, borderColor: theme.borderStrong }]}
+    >
+      <Text variant="title" color={theme.accent} style={styles.plus}>
+        +
+      </Text>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
-  root: { flex: 1, paddingHorizontal: 24 },
+  root: { flex: 1, paddingHorizontal: PADDING },
   header: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
-  // PR5 (audit Finding #13): tightened gap so OfflineIndicator + ⚙ + StreakCounter
-  // don't overflow on smaller devices (iPhone SE). flexShrink lets the children
-  // collapse gracefully if the offline pill is wider than the spare width.
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 12, flexShrink: 1 },
-  body: { flex: 1, justifyContent: 'center' },
-  taskBlock: { gap: 12 },
-  pills: { flexDirection: 'row', gap: 8, marginTop: 12 },
-  hidden: { textAlign: 'center' },
-  empty: { alignItems: 'center', gap: 8 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  date: { marginTop: 2, textTransform: 'capitalize' },
+
+  scrollWrap: { flex: 1 },
+  scroll: { flex: 1 },
+  scrollContent: { flexGrow: 1, gap: 16, paddingVertical: 14 },
+  topAlign: { justifyContent: 'flex-start' },
+  centerAlign: { justifyContent: 'center' },
   center: { textAlign: 'center' },
-  launchError: { textAlign: 'center', marginTop: 8 },
+  centerItems: { alignItems: 'center' },
+  kicker: { letterSpacing: 1 },
+  flex1: { flex: 1 },
+
+  streakBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+
+  statCol: { flex: 1, gap: 2 },
+
+  hero: { alignItems: 'center', gap: 12, marginVertical: 4 },
+  coach: { textAlign: 'center', paddingHorizontal: 8 },
+
+  upNextHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+
+  block: { gap: 20 },
+  welcome: { alignItems: 'center', gap: 6 },
+  recapRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  firstTime: { alignItems: 'center', gap: 16 },
+
+  footer: { gap: 10 },
+  ctaRow: { flexDirection: 'row', gap: 10, alignItems: 'stretch' },
+  ctaPrimary: { flex: 1 },
+  addSquare: {
+    width: 52,
+    height: 52,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  plus: { width: '100%', textAlign: 'center', lineHeight: 50 },
 });

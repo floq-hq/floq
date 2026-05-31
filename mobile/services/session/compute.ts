@@ -205,12 +205,32 @@ export function computeSessionPlan(
   // blend — the documented defensive path.
   const baseline = routeSessionPlan(noFatigueInputs, behavioral, matureInfer);
 
+  // L20 AMENDMENT (2026-05-30, Mohamed) — estimate-aware FLOOR on the no-fatigue
+  // CAPACITY. The L20 cap below only ever LOWERS the recommendation, so a low-
+  // capacity user (low base_focus, off-window, etc.) floored at FOCUS_MIN got a
+  // 15-min block for a 95-min exam — reading as "the app isn't taking this
+  // seriously" (and the warming blend self-reinforces it: short rec → short
+  // sessions → low behavioral avg → short rec). Floor a substantial task at one
+  // research-backed focus unit: min(estMinutes, FOCUS_UNIT_MINUTES) (a Pomodoro,
+  // 25 min — see the constant). SCIENCE-RESPECTING: 25 is the established
+  // minimum sustainable work block, so this never recommends beyond capacity; it
+  // only rescues a collapsed-low number, and because the floor sits BELOW a
+  // typical recommendation (30–51) it leaves the cold/warming science untouched
+  // there. Applied to the BASELINE, BEFORE the depletion trim, so today's
+  // fatigue/recovery still scale it down (a tired user gets floor × dmod) — also
+  // why the M4.7 depletion expectations are unchanged. Bounded above by the
+  // ultradian FOCUS_MAX clamp; lives HERE, not in frozen coldStart.ts.
+  const flooredBaseline =
+    task.estMinutes > 0
+      ? Math.max(baseline.focusMinutes, Math.min(task.estMinutes, FOCUS_UNIT_MINUTES))
+      : baseline.focusMinutes;
+
   const { gapMin, prevBreak } = resolveRecoveryGap(ctx, recent);
   const fmod = fatigueMod(sessionsToday);
   const rmod = recoveryMod(gapMin, prevBreak);
   const dmod = depletionMod(fmod, rmod);
 
-  const depletedFocus = Math.floor(baseline.focusMinutes * dmod);
+  const depletedFocus = Math.floor(flooredBaseline * dmod);
 
   // L20 / Bug #6 — task-estimate cap. The cold-start formula recommends FOCUS
   // CAPACITY, not task length, so a 25-min task can land a 72-min "Suggested
@@ -274,6 +294,17 @@ export function computeSessionPlan(
  *  recommendation. 1.5 = 50% slack for noisy LLM estimates. Calibrated
  *  constant — revisit with real-usage data. (decisions.md L20) */
 export const TASK_ESTIMATE_BUFFER = 1.5;
+
+/** Ceiling of the estimate-aware floor (L20 amendment) — ONE research-backed
+ *  focus unit. The bare FOCUS_MIN (15) is the "flow-possible" threshold; this is
+ *  the minimum *meaningful* work block: the Pomodoro Technique's 25-min interval
+ *  (Cirillo; the most-studied sustained-focus unit). Science-respecting as a
+ *  floor because ~everyone can sustain one Pomodoro, so lifting a collapsed-low
+ *  recommendation to 25 never exceeds real capacity — it just stops a serious
+ *  task reading as a throwaway 15. The floor itself is min(estMinutes, this), so
+ *  a short task is never floored above its own length, and the ultradian
+ *  FOCUS_MAX clamp still bounds the top. Calibrated, not frozen. */
+export const FOCUS_UNIT_MINUTES = 25;
 
 /** Map a stored session row → the warming blend's BehavioralSession (M5.4).
  *  hourBucket is derived from `startedAt` (not stored as a column); useCase is

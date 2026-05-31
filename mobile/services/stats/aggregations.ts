@@ -56,6 +56,70 @@ export function weekStartMs(now: number = Date.now()): number {
   return cursor;
 }
 
+/** Device-local midnight of the day containing `now` — the start of "today".
+ *  Exported so the query hook can hand the same start time to getSessionsSince.
+ *  Mirrors the boundary countSessionsToday already uses. */
+export function todayStartMs(now: number = Date.now()): number {
+  return localMidnight(now);
+}
+
+/** Device-local midnight of yesterday — the start of the "yesterday recap"
+ *  window. Calendar-aware / DST-safe (delegates to prevDayMidnight). The recap
+ *  window is [yesterdayStartMs, todayStartMs). */
+export function yesterdayStartMs(now: number = Date.now()): number {
+  return prevDayMidnight(localMidnight(now));
+}
+
+/** Total focus minutes across sessions ended today (device-local). The Home
+ *  status line's "47 min focused". Sums actualFocusMinutes — the real time on
+ *  task, not the planned recommendation. 0 (not null) when today is empty: the
+ *  status line always renders a number, and "0 min focused" is a truthful
+ *  pre-first-session state. Defensive filtering: stays correct even if handed
+ *  rows outside today (callers pre-filter via getSessionsSince(todayStartMs)). */
+export function todayFocusedMinutes(
+  rows: readonly CompletedSession[],
+  now: number = Date.now(),
+): number {
+  const start = todayStartMs(now);
+  let sum = 0;
+  for (const r of rows) {
+    if (r.endedAt < start) continue;
+    sum += r.actualFocusMinutes;
+  }
+  return sum;
+}
+
+/** Yesterday's recap row for the Home returning state: focus minutes, session
+ *  count, and distraction count over the [yesterdayStartMs, todayStartMs)
+ *  window (device-local). Zeros across the board when yesterday was idle — the
+ *  caller decides whether to show the recap (State 2 only renders it for a
+ *  returning user, who has history; an all-zero recap there means "yesterday
+ *  off", still truthful). Defensive window filter on both edges so an
+ *  over-broad getSessionsSince(yesterdayStartMs) fetch can't leak today's rows. */
+export interface YesterdayRecap {
+  focusMinutes: number;
+  sessions: number;
+  distractions: number;
+}
+
+export function yesterdayRecap(
+  rows: readonly CompletedSession[],
+  now: number = Date.now(),
+): YesterdayRecap {
+  const start = yesterdayStartMs(now);
+  const end = todayStartMs(now);
+  let focusMinutes = 0;
+  let sessions = 0;
+  let distractions = 0;
+  for (const r of rows) {
+    if (r.endedAt < start || r.endedAt >= end) continue;
+    focusMinutes += r.actualFocusMinutes;
+    sessions += 1;
+    distractions += r.distractions.length;
+  }
+  return { focusMinutes, sessions, distractions };
+}
+
 /** Mean focus score across sessions ended within the rolling 7-day window.
  *  Returns null when the window is empty (UI shows "—" / cold-regime badge per
  *  S5.2). Defensive filtering: callers normally pre-filter via getSessionsSince

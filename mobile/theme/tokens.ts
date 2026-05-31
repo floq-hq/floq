@@ -9,6 +9,9 @@
 
 export const lightTheme = {
   bg: '#FAFAFA',
+  // Bottom of the app-wide background gradient (decisions.md L24 — the one
+  // sanctioned gradient). A hair deeper than `bg` for subtle ambient depth.
+  bgBottom: '#EDEDED',
   bgElevated: '#FFFFFF', // exception: elevated white on near-white bg reads correctly
   bgPressed: '#F0F0F0',
   border: '#E5E5E5',
@@ -32,6 +35,7 @@ export type Theme = typeof lightTheme;
 
 export const darkTheme: Theme = {
   bg: '#0F0F0F',
+  bgBottom: '#070709', // subtle deepening toward the bottom (faint cool cast)
   bgElevated: '#1A1A1A',
   bgPressed: '#252525',
   border: '#2A2A2A',

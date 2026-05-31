@@ -226,8 +226,9 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   body: { paddingHorizontal: 24, paddingBottom: 16, flexGrow: 1, gap: 16 },
-  reviewBody: { flex: 1, paddingHorizontal: 24 },
-  emptyReview: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  // No horizontal padding: the draggable rows are full-bleed (own inset).
+  reviewBody: { flex: 1 },
+  emptyReview: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
   center: { textAlign: 'center' },
   gap: { gap: 12 },
   textarea: {

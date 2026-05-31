@@ -18,15 +18,14 @@ import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FloqTabBar, type TabKey } from '../../components/FloqTabBar';
 import { useSessionSync } from '../../services/sync/useSessionSync';
-import { useTheme } from '../../theme';
 
 function AppTabBar({ state, navigation }: BottomTabBarProps) {
-  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const active = state.routes[state.index]?.name as TabKey;
 
   return (
-    <View style={{ backgroundColor: theme.bg, paddingBottom: Math.max(insets.bottom, 8) }}>
+    // Transparent so the root background gradient shows behind the nav bar.
+    <View style={{ paddingBottom: Math.max(insets.bottom, 8) }}>
       <FloqTabBar
         active={active}
         onChange={(key) => {
@@ -44,7 +43,11 @@ export default function TabsLayout() {
 
   return (
     <Tabs
-      screenOptions={{ headerShown: false }}
+      screenOptions={{
+        headerShown: false,
+        // Transparent scene so the root background gradient shows through.
+        sceneStyle: { backgroundColor: 'transparent' },
+      }}
       tabBar={(props) => <AppTabBar {...props} />}
     >
       <Tabs.Screen name="home" options={{ title: 'Home' }} />

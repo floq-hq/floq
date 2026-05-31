@@ -28,7 +28,7 @@ export default function MoreTab() {
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={[styles.root, { backgroundColor: theme.bg, paddingTop: insets.top + 12 }]}>
+    <View style={[styles.root, { paddingTop: insets.top + 12 }]}>
       <View style={styles.header}>
         <Text variant="title">More</Text>
       </View>

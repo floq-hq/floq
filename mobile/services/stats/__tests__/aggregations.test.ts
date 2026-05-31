@@ -6,8 +6,12 @@ import {
   distractionRate,
   longestStreak,
   personalBest,
+  todayFocusedMinutes,
+  todayStartMs,
   weeklyFocusScore,
   weekStartMs,
+  yesterdayRecap,
+  yesterdayStartMs,
 } from '../aggregations';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -253,5 +257,62 @@ describe('personalBest', () => {
 
   it('passes through fractional scores', () => {
     expect(personalBest(61.6667)).toBe(61.6667);
+  });
+});
+
+// Construct local-time epochs at RUNTIME (inside each test). The DST describe
+// above mutates process.env.TZ; reusing the module-load constants (NOON/
+// TODAY_MID) as expected boundaries would compare a load-time TZ against a
+// run-time one. `at()` keeps both sides in the same active TZ — the same
+// runtime-construction the weekStartMs test relies on.
+const at = (mo: number, d: number, h = 0, mi = 0): number =>
+  new Date(2026, mo, d, h, mi, 0).getTime();
+
+describe('todayStartMs / yesterdayStartMs', () => {
+  it('todayStartMs is device-local midnight of the day of `now`', () => {
+    expect(todayStartMs(at(4, 26, 12))).toBe(at(4, 26, 0));
+  });
+
+  it('yesterdayStartMs is local midnight one calendar day before', () => {
+    expect(yesterdayStartMs(at(4, 26, 12))).toBe(at(4, 25, 0));
+  });
+});
+
+describe('todayFocusedMinutes', () => {
+  it('sums actualFocusMinutes for sessions ended today', () => {
+    const a = makeSession({ id: 'a', actualFocusMinutes: 30, endedAt: at(4, 26, 9) });
+    const b = makeSession({ id: 'b', actualFocusMinutes: 17, endedAt: at(4, 26, 14) });
+    expect(todayFocusedMinutes([a, b], at(4, 26, 12))).toBe(47);
+  });
+
+  it('returns 0 (not null) when today is empty', () => {
+    expect(todayFocusedMinutes([], at(4, 26, 12))).toBe(0);
+  });
+
+  it('ignores sessions ended before today-midnight', () => {
+    const yesterday = makeSession({ id: 'y', actualFocusMinutes: 50, endedAt: at(4, 25, 23, 59) });
+    expect(todayFocusedMinutes([yesterday], at(4, 26, 12))).toBe(0);
+  });
+});
+
+describe('yesterdayRecap', () => {
+  it('aggregates focus / sessions / distractions over the yesterday window', () => {
+    const a = makeSession({ id: 'a', actualFocusMinutes: 25, distractions: [1], endedAt: at(4, 25, 10) });
+    const b = makeSession({ id: 'b', actualFocusMinutes: 22, distractions: [], endedAt: at(4, 25, 16) });
+    expect(yesterdayRecap([a, b], at(4, 26, 12))).toEqual({ focusMinutes: 47, sessions: 2, distractions: 1 });
+  });
+
+  it('clamps the upper edge — today\'s rows never leak in', () => {
+    const today = makeSession({ id: 't', actualFocusMinutes: 99, endedAt: at(4, 26, 0, 1) });
+    expect(yesterdayRecap([today], at(4, 26, 12))).toEqual({ focusMinutes: 0, sessions: 0, distractions: 0 });
+  });
+
+  it('excludes the day-before-yesterday', () => {
+    const older = makeSession({ id: 'o', actualFocusMinutes: 40, endedAt: at(4, 24, 23, 59) });
+    expect(yesterdayRecap([older], at(4, 26, 12))).toEqual({ focusMinutes: 0, sessions: 0, distractions: 0 });
+  });
+
+  it('returns all-zero on an empty window', () => {
+    expect(yesterdayRecap([], at(4, 26, 12))).toEqual({ focusMinutes: 0, sessions: 0, distractions: 0 });
   });
 });

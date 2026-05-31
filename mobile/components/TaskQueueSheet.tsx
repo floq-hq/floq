@@ -90,18 +90,30 @@ export function TaskQueueSheet({ onClose }: { onClose: () => void }) {
           </Text>
         </View>
       ) : (
-        <DraggableTaskList
-          items={tasks}
-          onReorder={reorder}
-          onRemove={(t) => removeTask(t.id)}
-          onEdit={(t) => setForm({ mode: 'edit', task: t })}
-        />
+        <>
+          <Text variant="caption" color={theme.textMuted} style={styles.subtitle}>
+            {tasks.length} task{tasks.length === 1 ? '' : 's'} · drag to reorder, swipe to delete
+          </Text>
+          {/* Bounded flex:1 wrapper so a long queue scrolls INSIDE the list and
+              the pinned add-footer below never gets pushed off-screen. The list
+              fills this View (draggable-flatlist needs a sized parent). */}
+          <View style={styles.list}>
+            <DraggableTaskList
+              items={tasks}
+              onReorder={reorder}
+              onRemove={(t) => removeTask(t.id)}
+              onEdit={(t) => setForm({ mode: 'edit', task: t })}
+              style={styles.fill}
+            />
+          </View>
+        </>
       )}
 
-      {/* Understated manual-add (L14) — quiet, not competing with brain-dump. */}
+      {/* Understated manual-add (L14) — quiet, not competing with brain-dump —
+          but pinned as a footer (top hairline) so it's always reachable. */}
       <Pressable
         onPress={() => setForm({ mode: 'add' })}
-        style={styles.addManually}
+        style={[styles.addManually, { borderTopColor: theme.border }]}
         accessibilityRole="button"
         accessibilityLabel="Add a task manually"
       >
@@ -129,5 +141,15 @@ const styles = StyleSheet.create({
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   center: { textAlign: 'center' },
   formBody: { flex: 1 },
-  addManually: { alignSelf: 'center', paddingVertical: 14 },
+  subtitle: { marginBottom: 12 },
+  // Break the list out of the sheet's 24px padding so rows are full-bleed (the
+  // dragged row spans the screen). Rows carry their own horizontal inset.
+  list: { flex: 1, marginHorizontal: -24 },
+  fill: { flex: 1 },
+  addManually: {
+    alignItems: 'center',
+    paddingTop: 16,
+    marginTop: 4,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
 });

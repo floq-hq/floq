@@ -14,7 +14,8 @@ import { useCallback } from 'react';
 import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import DraggableFlatList, { type RenderItemParams } from 'react-native-draggable-flatlist';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
-import { Pill, Text } from './ui';
+import { Text } from './ui';
+import { TaskSummary } from './TaskSummary';
 import { useTheme } from '../theme';
 import type { Difficulty } from '../services/tasks';
 
@@ -31,6 +32,7 @@ export function DraggableTaskList<T extends DraggableTaskRow>({
   onRemove,
   onEdit,
   contentContainerStyle,
+  style,
 }: {
   items: T[];
   onReorder: (from: number, to: number) => void;
@@ -38,6 +40,12 @@ export function DraggableTaskList<T extends DraggableTaskRow>({
   /** Omit to make rows non-editable (e.g. the pre-save brain-dump review). */
   onEdit?: (item: T) => void;
   contentContainerStyle?: StyleProp<ViewStyle>;
+  /** Outer CONTAINER style. Pass `{ flex: 1 }` when the list shares a column
+   *  with a pinned footer so it scrolls internally instead of pushing the footer
+   *  off (TaskQueueSheet). Goes to draggable-flatlist's `containerStyle` (the
+   *  flex must live on the wrapper, NOT the inner list, or it collapses to 0).
+   *  Omitted, the list sizes to content (brain-dump review). */
+  style?: StyleProp<ViewStyle>;
 }) {
   const theme = useTheme();
 
@@ -62,7 +70,14 @@ export function DraggableTaskList<T extends DraggableTaskRow>({
           <View
             style={[
               styles.row,
-              { backgroundColor: theme.bgElevated, borderColor: theme.border, opacity: isActive ? 0.9 : 1 },
+              {
+                // Opaque so the swipe-to-delete stays hidden until swiped. Flat
+                // on the screen bg (no per-row card); a hairline divider sets
+                // rows apart. Lifts to the elevated surface while dragging.
+                backgroundColor: isActive ? theme.bgElevated : theme.bg,
+                borderBottomColor: theme.border,
+                opacity: isActive ? 0.97 : 1,
+              },
             ]}
           >
             <Pressable
@@ -71,13 +86,13 @@ export function DraggableTaskList<T extends DraggableTaskRow>({
               accessibilityRole={onEdit ? 'button' : undefined}
               accessibilityLabel={onEdit ? `Edit ${item.title}` : item.title}
             >
-              <Text variant="bodyMedium" numberOfLines={1}>
-                {item.title}
-              </Text>
-              <View style={styles.pills}>
-                <Pill label={`${item.estMinutes} min`} color={theme.textMuted} />
-                <Pill label={`Difficulty ${item.difficulty}/5`} color={theme.accent} />
-              </View>
+              <TaskSummary
+                title={item.title}
+                difficulty={item.difficulty}
+                estMinutes={item.estMinutes}
+                titleVariant="bodyMedium"
+                titleLines={2}
+              />
             </Pressable>
             {/* Grab-and-drag handle (onPressIn → draggable-flatlist's pan). */}
             <Pressable
@@ -106,29 +121,34 @@ export function DraggableTaskList<T extends DraggableTaskRow>({
         if (from !== to) onReorder(from, to);
       }}
       renderItem={renderItem}
+      containerStyle={style}
+      showsVerticalScrollIndicator={false}
       contentContainerStyle={contentContainerStyle ?? styles.listContent}
     />
   );
 }
 
+// Horizontal inset lives INSIDE the row (not on the list container) so each row
+// — including the one lifted while dragging — spans the full screen width edge-
+// to-edge, instead of a floating, inset card that looks "cut". Callers keep the
+// list full-bleed and pad their own header/footer.
+const ROW_PAD = 24;
+
 const styles = StyleSheet.create({
-  listContent: { gap: 12, paddingBottom: 8 },
+  listContent: { paddingBottom: 8 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    padding: 16,
+    paddingVertical: 16,
+    paddingHorizontal: ROW_PAD,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  info: { flex: 1, gap: 8 },
-  pills: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  info: { flex: 1 },
   handle: { paddingLeft: 12, paddingVertical: 8, justifyContent: 'center' },
   delete: {
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    marginLeft: 8,
+    paddingHorizontal: 24,
   },
 });

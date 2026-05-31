@@ -1,6 +1,9 @@
 export { Text, type TextProps } from './Text';
 export { Button, type ButtonProps } from './Button';
 export { Card, type CardProps } from './Card';
+export { AppBackground } from './AppBackground';
+export { Wordmark } from './Wordmark';
+export { ScrollFade } from './ScrollFade';
 export { Pill, type PillProps } from './Pill';
 export {
   SegmentedControl,
