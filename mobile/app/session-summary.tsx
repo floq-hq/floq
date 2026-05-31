@@ -49,6 +49,7 @@ export default function SessionSummary() {
     taskTitle?: string;
     doneAt?: string;
     sessionId?: string;
+    startedAt?: string;
   }>();
   const minutes = Number(params.minutes ?? 0);
   const distractions = Number(params.distractions ?? 0);
@@ -62,6 +63,8 @@ export default function SessionSummary() {
   // L23: pass the session id through so /recovery's Mark-task-done can stamp the
   // task-completion training label on this session's local sample.
   const sessionId = typeof params.sessionId === 'string' ? params.sessionId : '';
+  // audit #18 / S6.0: session start time → the share card's time-of-day insight.
+  const startedAt = typeof params.startedAt === 'string' ? Number(params.startedAt) : undefined;
   const streak = useCurrentStreak().data ?? 0;
 
   // S6.0: optional "share this session" affordance. Building the card needs a
@@ -70,8 +73,13 @@ export default function SessionSummary() {
   const [shareCard, setShareCard] = useState<SessionCardData | null>(null);
   const openShare = useCallback(() => {
     if (score == null) return;
-    setShareCard({ focusScore: score, focusMinutes: minutes, distractionCount: distractions });
-  }, [score, minutes, distractions]);
+    setShareCard({
+      focusScore: score,
+      focusMinutes: minutes,
+      distractionCount: distractions,
+      ...(startedAt != null && Number.isFinite(startedAt) ? { startedAt } : {}),
+    });
+  }, [score, minutes, distractions, startedAt]);
 
   // Route to /recovery — UNLESS the recomputed break is 0 (L21: the user
   // focused too little to need recovery). In that case skip recovery and

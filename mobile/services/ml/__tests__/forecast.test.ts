@@ -2,10 +2,24 @@ import { describe, expect, it } from 'vitest';
 
 import {
   FORECAST_ALPHA,
+  FORECAST_BETA,
   forecastNext7Days,
   MATURE_FORECAST_THRESHOLD,
   MIN_SESSIONS_FOR_FORECAST,
 } from '../forecast';
+
+/** Independent Holt's-linear reimplementation so the prediction assertions
+ *  verify the production recurrence rather than echo it. */
+function holt(xs: number[], alpha: number, beta: number): { level: number; trend: number } {
+  let level = xs[0];
+  let trend = xs[1] - xs[0];
+  for (let i = 1; i < xs.length; i += 1) {
+    const prev = level;
+    level = alpha * xs[i] + (1 - alpha) * (level + trend);
+    trend = beta * (level - prev) + (1 - beta) * trend;
+  }
+  return { level, trend };
+}
 
 // Independent reimplementation of sample std (n−1) so the band assertions
 // verify the production math rather than echo it.
@@ -34,31 +48,38 @@ describe('forecastNext7Days — gating (ml-regimes.md: 0–6 hidden)', () => {
   });
 });
 
-describe('forecastNext7Days — EWMA level', () => {
-  it('a constant series predicts that constant with a zero-width band', () => {
+describe('forecastNext7Days — Holt level + trend', () => {
+  it('a constant series predicts that constant, with zero trend + zero-width band', () => {
     const f = forecastNext7Days(seq(7, () => 42));
     expect(f).not.toBeNull();
     expect(f!.predicted).toBeCloseTo(42, 10);
+    expect(f!.trend).toBeCloseTo(0, 10);
     expect(f!.lowerBand).toBeCloseTo(42, 10);
     expect(f!.upperBand).toBeCloseTo(42, 10);
   });
 
-  it('weights recent sessions more than old ones (predicted above the mean for a rising series)', () => {
+  it('projects an UPWARD trend forward for a rising series (slopes past the last point)', () => {
     const rising = [10, 20, 30, 40, 50, 60, 70];
-    const mean = rising.reduce((s, x) => s + x, 0) / rising.length; // 40
     const f = forecastNext7Days(rising)!;
-    expect(f.predicted).toBeGreaterThan(mean); // recency pull upward
-    expect(f.predicted).toBeLessThan(70); // smoothed, not the last point
-    expect(f.predicted).toBeGreaterThan(rising[0]);
+    expect(f.trend).toBeGreaterThan(0); // detects the upward trajectory
+    // predicted is the NEXT session — a real forecast projects beyond the last
+    // observation rather than reverting to the mean.
+    expect(f.predicted).toBeGreaterThan(70);
   });
 
-  it('matches the EWMA recurrence for a known series (alpha = 0.3)', () => {
-    const xs = [10, 20, 30, 40, 50, 60, 70];
-    let level = xs[0];
-    for (let i = 1; i < xs.length; i += 1) {
-      level = FORECAST_ALPHA * xs[i] + (1 - FORECAST_ALPHA) * level;
-    }
-    expect(forecastNext7Days(xs)!.predicted).toBeCloseTo(level, 10);
+  it('projects a DOWNWARD trend for a falling series', () => {
+    const falling = [70, 60, 50, 40, 30, 20, 10];
+    const f = forecastNext7Days(falling)!;
+    expect(f.trend).toBeLessThan(0);
+    expect(f.predicted).toBeLessThan(10);
+  });
+
+  it('matches the Holt recurrence for a known series (alpha = 0.3, beta = 0.1)', () => {
+    const xs = [12, 18, 25, 31, 44, 52, 63];
+    const { level, trend } = holt(xs, FORECAST_ALPHA, FORECAST_BETA);
+    const f = forecastNext7Days(xs)!;
+    expect(f.trend).toBeCloseTo(trend, 10);
+    expect(f.predicted).toBeCloseTo(level + trend, 10);
   });
 });
 

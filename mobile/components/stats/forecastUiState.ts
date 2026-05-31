@@ -31,3 +31,22 @@ export function forecastUiState(sessionCount: number): ForecastUiState {
   }
   return sessionCount >= MATURE_FORECAST_THRESHOLD ? 'mature' : 'warming';
 }
+
+/** Which forecast-section view to render. Three states, not two — this fixes
+ *  audit #7: the cold "N more sessions to unlock" countdown (MIN − count) must
+ *  render ONLY when genuinely cold (count below the gate). When count ≥ gate but
+ *  the shaped forecast is momentarily absent (query loading / error / a degenerate
+ *  series), show a neutral placeholder instead — the old `cold || shape==null`
+ *  branch rendered a NEGATIVE countdown ("-13 more sessions") in that window. */
+export type ForecastSectionView = 'cold' | 'placeholder' | 'chart';
+
+export function forecastSectionView({
+  state,
+  hasShape,
+}: {
+  state: ForecastUiState;
+  hasShape: boolean;
+}): ForecastSectionView {
+  if (state === 'cold') return 'cold';
+  return hasShape ? 'chart' : 'placeholder';
+}

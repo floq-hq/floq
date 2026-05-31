@@ -63,7 +63,7 @@ Floq's response: **ship both, follow the system, let the user override.** The se
 - **No pure black (`#000000`).** Pure black on OLED produces uncomfortable contrast against text and aggravates astigmatism. Use `#0F0F0F`.
 - **No pure white (`#FFFFFF`).** Same reason in reverse — glare in dim environments. Use `#FAFAFA`.
 - **No neon.** No `#00FFFF`-style saturation anywhere.
-- **No gradients, no glassmorphism, no shadows beyond a single subtle elevation, no 3D, no skeuomorphic anything.**
+- **No gradients, no glassmorphism, no shadows beyond a single subtle elevation, no 3D, no skeuomorphic anything.** *Two sanctioned exceptions, both functional, both react-native-svg: (1) the app background + ScrollFade gradient (L25); (2) the **shareable session card's under-curve phase wash** — a soft clay→slate→teal blend keyed to the Struggle/Release/Flow phase colors, fading into the card toward the baseline. It reads as a scientific "data about your brain" readout (the card's whole job), uses only the sanctioned phase tokens, and appears nowhere else. The no-gradient rule stands everywhere else.*
 - **Contrast minimums:** body text ≥ 4.5:1, large text (≥18px or ≥14px bold) ≥ 3:1. WCAG AA. Check with a contrast checker — don't eyeball.
 - **The teal accent must remain identifiable in both themes** without changing hue. Same `#0F8B8D` in both modes.
 

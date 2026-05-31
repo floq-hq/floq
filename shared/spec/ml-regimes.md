@@ -60,7 +60,7 @@ The forecast model predicts the next 7 days of expected focus score. It is gated
 | 7–13 | Visible, wide bands. "Forecast confidence: low". |
 | 14+ | Tight bands. Beat-self target enabled. "Forecast confidence: high". |
 
-MVP implementation: **EWMA (exponential weighted moving average) over historical `focus_score`**. Returns next-7-day prediction + trend. Do not ship an LSTM in v0 — see post-MVP in the blueprint.
+MVP implementation: **Holt's linear exponential smoothing (level + trend) over historical `focus_score`** (`services/ml/forecast.ts`). Returns the next-session prediction + a per-session **trend**, which `forecastShape` projects forward as a sloped line with a confidence cone that widens over the horizon (½-width × √h). This upgrades the original flat-EWMA (the M4 competition showed trend-aware exponential smoothing is a strong, hard-to-beat baseline on short series) and is the "ES" half of the eventual cross-user encoder. Still **no LSTM/sequence model in v0** — that's post-MVP and needs **cross-USER** data (not 7–16 points from one person); the full plan is `docs/forecast-encoder.md`.
 
 ## UI implications cheat sheet
 
