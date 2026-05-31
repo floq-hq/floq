@@ -59,7 +59,7 @@ export default function StatsTab() {
 
   return (
     <ScrollView
-      style={[styles.root, { backgroundColor: theme.bg }]}
+      style={styles.root}
       contentContainerStyle={[
         styles.content,
         { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 32 },

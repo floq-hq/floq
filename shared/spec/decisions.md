@@ -318,6 +318,10 @@ The DONE-vs-end-early distinction is the user's **intent**, not the elapsed time
 
 **Implementation:** PR3. `mobile/services/session/compute.ts` adds `export const TASK_ESTIMATE_BUFFER = 1.5` + the cap step. The dev-mode `console.log` shows `taskCap` + `capBites` so the cap is observable. Tests cover: short task caps, long task doesn't cap, the FOCUS_MIN floor wins below 10 estimated minutes, the buffer constant doesn't silently drift.
 
+**AMENDMENT — 2026-05-30 (Mohamed): estimate-aware FLOOR.** The L20 cap only ever LOWERS the recommendation. So a low-capacity user (low `base_focus`, off-window, easy-distraction stacking, or the warming blend self-reinforcing short sessions) floored at FOCUS_MIN got a **15-min block for a 95-min exam** — which reads as the app not taking the work seriously. Symmetric fix: floor a substantial task at **one research-backed focus unit** — `FOCUS_UNIT_MINUTES = 25` (the **Pomodoro** interval; the most-studied minimum sustainable focus block).
+- `flooredBaseline = max(baseline_capacity, min(estMinutes, 25))`, applied to the no-fatigue baseline **before** the depletion mod — so today's fatigue/recovery still scale it down (a tired user gets `floor × dmod`), and the M4.7 expectations are unchanged.
+- **Science-respecting:** 25 is below a typical recommendation (30–51), so the cold/warming formula is untouched there; ~everyone can sustain one Pomodoro, so the floor never recommends beyond capacity — it only rescues a collapsed-low number. Bounded above by the ultradian FOCUS_MAX clamp; never exceeds the task's own length; tiny tasks still hit the 15-min flow floor. `FOCUS_UNIT_MINUTES` is calibrated, not frozen. Tests: low-capacity long task → 25, shorter-than-unit → task length, tiny → 15, high-capacity unchanged, floor still depletes.
+
 ### L21 — Skip recovery for sub-5-min DONEs
 
 **Date locked:** 2026-05-29
@@ -414,6 +418,15 @@ The DONE-vs-end-early distinction is the user's **intent**, not the elapsed time
 **Standing rule:** **every future iOS production build must answer "No" to the Apple-login prompt**, or EAS re-disables the capability and the build breaks again. If the cert/profile is ever regenerated, repeat steps 1–3.
 
 **Revisit:** if a future eas-cli version fixes auto-capability detection for Sign in with Apple, this manual management can be dropped. Runbook detail: `docs/dogfooding.md`.
+
+### L25 — Home redesign: hub vs launchpad + one sanctioned gradient
+
+**Decided:** Mohamed, 2026-05-30 (Home redesign).
+
+- **Home = hub, Session = launchpad.** Home (`app/(tabs)/home.tsx`) is a focus dashboard: a pinned header (floq wordmark + today's date + avatar), a prominent streak banner, the **recommendation ring** — a live `computeSessionPlan` preview for the top task (no task → no ring) — with a one-line **coach voice** (regime + time-of-day fit + recovery), a tappable **UP NEXT** card for queue management, and a **"Go to Session →"** CTA + a "+" add square. The weekly **focus SCORE** lives on the Stats tab, not Home. The Session tab (`app/(tabs)/session.tsx`) is the launchpad — the same recommendation ring + **"Begin focus"** START. All 5 tabs stay (reverses the `docs/home-redesign-brief.md` proposal to drop Session).
+- **One sanctioned gradient — overrides design-system.md "No gradients. Anywhere."** A subtle app-wide background gradient (`components/ui/AppBackground.tsx`, `bg`→`bgBottom` token, rendered via the existing `react-native-svg`). It lives at the root BEHIND the whole app — every tab screen + behind the nav bar — with screens transparent (`contentStyle`/`sceneStyle` transparent) so it shows through. This is the ONLY gradient permitted; the spec's no-gradient rule otherwise stands everywhere else.
+- Task presentation is unified via `components/TaskSummary.tsx` (Easy/Medium/Hard, never "n/5"; long titles wrap). The queue sheet is a flat, full-bleed list (hairline dividers, pinned "+ Add manually" footer), not boxy cards.
+- The recommendation-vs-task-estimate concern is **resolved by the L20 amendment** — a substantial task floors at one Pomodoro (`FOCUS_UNIT_MINUTES = 25`), so a 95-min exam is never recommended a throwaway 15-min block.
 
 ---
 

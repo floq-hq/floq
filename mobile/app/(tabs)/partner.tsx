@@ -19,7 +19,7 @@ export default function PartnerTab() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   return (
-    <View style={[styles.root, { backgroundColor: theme.bg, paddingTop: insets.top + 56 }]}>
+    <View style={[styles.root, { paddingTop: insets.top + 56 }]}>
       <Text variant="title">Partner</Text>
       <Text variant="body" color={theme.textMuted} style={styles.copy}>
         Your focus partner lands soon. Solo is fully available today — nothing

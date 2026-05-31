@@ -12,6 +12,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { configureNotifications } from '../services/notifications';
 import { queryClient } from '../services/queryClient';
+import { AppBackground } from '../components/ui';
 import { ThemeProvider, useTheme } from '../theme';
 
 function ThemedStack() {
@@ -19,12 +20,18 @@ function ThemedStack() {
   return (
     <>
       <StatusBar style="auto" />
+      {/* App-wide background gradient, behind the whole Stack. Most screens
+          paint a solid `bg` over it; the (tabs) group is transparent so the
+          gradient shows through there — including behind the tab bar (L24). */}
+      <AppBackground />
       <Stack
         screenOptions={{
           headerShown: false,
           contentStyle: { backgroundColor: theme.bg },
         }}
       >
+        {/* The tab group is transparent so the root gradient shows through. */}
+        <Stack.Screen name="(tabs)" options={{ contentStyle: { backgroundColor: 'transparent' } }} />
         {/* All other routes auto-register from the file tree; only these need an
             explicit override. */}
         <Stack.Screen name="brain-dump" options={{ presentation: 'modal' }} />

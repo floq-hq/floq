@@ -54,6 +54,7 @@ vi.mock('../../ml/matureInfer', () => ({ matureInfer: () => null }));
 
 import {
   TASK_ESTIMATE_BUFFER,
+  FOCUS_UNIT_MINUTES,
   hourBucket,
   buildSessionInputs,
   computeSessionPlan,
@@ -315,6 +316,65 @@ describe('computeSessionPlan — task-estimate cap (L20)', () => {
     const plan = computeSessionPlan('t1', { now: morning10 });
     // depletion alone → 38; cap = 38; min(38, 38) = 38.
     expect(plan.focusMinutes).toBe(38);
+  });
+});
+
+// L20 AMENDMENT — estimate-aware floor. The cap only LOWERS; without a floor a
+// low-capacity user got a 15-min block for a 95-min exam. The floor lifts the
+// no-fatigue baseline to min(estMinutes, FOCUS_UNIT_MINUTES) — one Pomodoro —
+// so a substantial task gets a real focus unit, while depletion still scales it
+// down. 25 sits below a typical recommendation (30–51), so the cold/warming
+// science is untouched there; it only rescues collapsed-low numbers.
+describe('FOCUS_UNIT_MINUTES constant (drift guard)', () => {
+  it('is 25 — one Pomodoro, the research-backed minimum focus unit', () => {
+    expect(FOCUS_UNIT_MINUTES).toBe(25);
+  });
+});
+
+describe('computeSessionPlan — estimate-aware floor (L20 amendment)', () => {
+  // Low base_focus → the cold-start formula clamps capacity to FOCUS_MIN (15).
+  const lowCapacity = { ...answers, base_focus: 16 };
+
+  beforeEach(() => {
+    store.answers = lowCapacity;
+    sql.sessionsToday = 0;
+    sql.lastEndedAt = null;
+    sql.recent = [];
+  });
+
+  it('floors a low-capacity user with a long task at one focus unit (25), not 15', () => {
+    // 95-min exam: baseline 15 → floored to min(95, 25) = 25; break floor(25×0.22)=5.
+    store.tasks = [makeTask({ estMinutes: 95 })];
+    const plan = computeSessionPlan('t1', { now: morning10 });
+    expect(plan.focusMinutes).toBe(25);
+    expect(plan.breakMinutes).toBe(5);
+  });
+
+  it('floors at the task length when the task is shorter than one unit', () => {
+    // 20-min task: baseline 15 → floored to min(20, 25) = 20.
+    store.tasks = [makeTask({ estMinutes: 20 })];
+    expect(computeSessionPlan('t1', { now: morning10 }).focusMinutes).toBe(20);
+  });
+
+  it('does NOT lift a tiny task above the 15-min science floor', () => {
+    // 8-min task: floor min(8,25)=8 < FOCUS_MIN; cap ceil(8×1.5)=12 → clamp → 15.
+    store.tasks = [makeTask({ estMinutes: 8 })];
+    expect(computeSessionPlan('t1', { now: morning10 }).focusMinutes).toBe(15);
+  });
+
+  it('leaves a high-capacity user unchanged (capacity already beats the floor)', () => {
+    store.answers = answers; // base 60 → baseline 51 > 25
+    store.tasks = [makeTask({ estMinutes: 95 })];
+    expect(computeSessionPlan('t1', { now: morning10 }).focusMinutes).toBe(51);
+  });
+
+  it('still scales the floored block down with depletion (floor is pre-fatigue)', () => {
+    // baseline 15 → floored 25; 3rd session + zero gap → dmod 0.75 → floor(25×0.75)=18.
+    store.tasks = [makeTask({ estMinutes: 95 })];
+    sql.sessionsToday = 2;
+    sql.lastEndedAt = morning10;
+    sql.recent = [{ plan: { breakMinutes: 11 } }];
+    expect(computeSessionPlan('t1', { now: morning10 }).focusMinutes).toBe(18);
   });
 });
 

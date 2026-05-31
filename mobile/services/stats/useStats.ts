@@ -19,9 +19,12 @@ import type { CompletedSession } from '../session/types';
 import { forecastNext7Days, type Forecast } from '../ml/forecast';
 import { shapeForecast, type ForecastShape } from './forecastShape';
 import {
+  countSessionsAllTime,
+  countSessionsToday,
   getAllSessionEndedAt,
   getBestSession,
   getFocusScoreSeries,
+  getLastSessionEndedAt,
   getMaxFocusScore,
   getSessionsSince,
 } from '../storage/sessions';
@@ -30,8 +33,13 @@ import {
   distractionRate,
   longestStreak,
   personalBest,
+  todayFocusedMinutes,
+  todayStartMs,
   weeklyFocusScore,
   weekStartMs,
+  yesterdayRecap,
+  yesterdayStartMs,
+  type YesterdayRecap,
 } from './aggregations';
 
 export const statsKeys = {
@@ -44,6 +52,11 @@ export const statsKeys = {
   bestSession: ['stats', 'bestSession'] as const,
   forecast: ['stats', 'forecast'] as const,
   forecastShape: ['stats', 'forecastShape'] as const,
+  todayFocused: ['stats', 'todayFocused'] as const,
+  yesterdayRecap: ['stats', 'yesterdayRecap'] as const,
+  sessionCount: ['stats', 'sessionCount'] as const,
+  sessionsToday: ['stats', 'sessionsToday'] as const,
+  lastSession: ['stats', 'lastSession'] as const,
 };
 
 export function useWeeklyFocusScore(): UseQueryResult<number | null> {
@@ -54,6 +67,62 @@ export function useWeeklyFocusScore(): UseQueryResult<number | null> {
       const rows = getSessionsSince(weekStartMs(now));
       return weeklyFocusScore(rows, now);
     },
+  });
+}
+
+/** Today's total focus minutes (device-local) for the Home status line —
+ *  "47 min focused". Always a number (0 before the first session today). Same
+ *  `['stats', …]` namespace, so a post-session invalidateQueries({ queryKey:
+ *  statsKeys.all }) refreshes it the moment a session is saved. */
+export function useTodayFocusedMinutes(): UseQueryResult<number> {
+  return useQuery({
+    queryKey: statsKeys.todayFocused,
+    queryFn: () => {
+      const now = Date.now();
+      return todayFocusedMinutes(getSessionsSince(todayStartMs(now)), now);
+    },
+  });
+}
+
+/** Yesterday's recap (focus minutes / sessions / distractions) for the Home
+ *  returning state. Fetches from yesterday-midnight; yesterdayRecap clamps the
+ *  upper edge so today's rows can't leak in. */
+export function useYesterdayRecap(): UseQueryResult<YesterdayRecap> {
+  return useQuery({
+    queryKey: statsKeys.yesterdayRecap,
+    queryFn: () => {
+      const now = Date.now();
+      return yesterdayRecap(getSessionsSince(yesterdayStartMs(now)), now);
+    },
+  });
+}
+
+/** Lifetime saved-session count, for Home's first-time-vs-returning state gate
+ *  (0 → first-time, ≥1 → returning). Cheap COUNT; in the `['stats', …]`
+ *  namespace so it flips to ≥1 the moment the first session is saved. */
+export function useSessionCount(): UseQueryResult<number> {
+  return useQuery({
+    queryKey: statsKeys.sessionCount,
+    queryFn: () => countSessionsAllTime(),
+  });
+}
+
+/** Sessions completed today (device-local) — the Home status line's
+ *  "2 sessions today". Same `['stats', …]` invalidation as the rest. */
+export function useSessionsToday(): UseQueryResult<number> {
+  return useQuery({
+    queryKey: statsKeys.sessionsToday,
+    queryFn: () => countSessionsToday(Date.now()),
+  });
+}
+
+/** End time of the most recent session (epoch-ms) or null on an empty DB — the
+ *  Home returning state's "last session 4:47 PM yesterday" (formatted in the
+ *  UI). null reads as "no history yet". */
+export function useLastSessionEndedAt(): UseQueryResult<number | null> {
+  return useQuery({
+    queryKey: statsKeys.lastSession,
+    queryFn: () => getLastSessionEndedAt(),
   });
 }
 
