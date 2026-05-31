@@ -10,11 +10,13 @@ export {
   signInWithEmail,
   signInWithGoogle,
   signInWithApple,
+  isAppleAuthAvailable,
   signInWithPhone,
   signOut,
   useCurrentUser,
   AuthNotConfiguredError,
   GoogleSignInCancelledError,
+  AppleSignInCancelledError,
 } from './auth';
 export { ensureUserDoc, type UserDocSeed } from './userDoc';
 export { resolveStartRoute, type StartRoute } from './routing';

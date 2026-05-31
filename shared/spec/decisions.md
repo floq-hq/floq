@@ -402,15 +402,31 @@ The DONE-vs-end-early distinction is the user's **intent**, not the elapsed time
 
 **Implementation:** consent setting + `services/telemetry/trainingSample.ts` (anonymized, consent-gated writer) + `training_samples` rules + local capture (SQLite migration 004 + `SessionPlan.features`). The retrain pipeline (`backend/export_training.py` + `ml/training/v2.py`) is deferred until samples accumulate.
 
-### L24 — Home redesign: hub vs launchpad + one sanctioned gradient
+### L24 — iOS "Sign in with Apple" capability is manually managed (EAS auto-sync disables it)
 
-**Decided:** Mohamed, 2026-05-30 (during the Home redesign).
+**Date locked:** 2026-05-31
+**Decision:** The iOS provisioning profile for `com.floq.app` is **managed manually**, NOT via EAS's automatic capability management, because EAS Build's capability sync (eas-cli ~20) **disables the "Sign in with Apple" capability** on the App ID during a build — even with `ios.usesAppleSignIn: true` AND an explicit `ios.entitlements["com.apple.developer.applesignin"] = ["Default"]` in `app.json` (both are present and required, but were not sufficient). The disabled capability yields a provisioning profile without the `com.apple.developer.applesignin` entitlement, so the Xcode signing step fails ("provisioning profile doesn't include the Sign In with Apple capability"). Operationalizes the Apple half of **L13**.
 
-- **Home = hub, Session = launchpad.** Home (`app/(tabs)/home.tsx`) manages tasks + shows data (the weekly **focus score** hero, momentum stats, a tappable UP NEXT card); its CTA is **"Go to Session →"** + a "+" add square. The per-session **recommendation ring** moved to the Session tab (`app/(tabs)/session.tsx`), which owns START ("**Begin focus**"). All 5 tabs stay — reverses the `docs/home-redesign-brief.md` proposal to drop Session.
+**Symptom / how to confirm:** after a failed build, the App ID in the Apple Developer portal shows "Sign In with Apple" **unchecked again** — EAS turned it off during its sync. Builds 5–7 (2026-05-30) failed this way before the fix.
+
+**The procedure that works (build #8, 2026-05-31 — runtime `1.1.0`):**
+1. Enable "Sign In with Apple" on the App ID (portal → Identifiers → `com.floq.app`).
+2. Portal → Profiles → **App Store** profile for `com.floq.app` against the existing distribution cert → download the `.mobileprovision` (this one includes the capability).
+3. `eas credentials -p ios` → production → **credentials.json: Download** (gets EAS's dist-cert `.p12`) → replace the profile path with the downloaded good `.mobileprovision` → **Upload** back to EAS.
+4. `eas build -p ios --profile production --auto-submit` → **answer "No"** to "Do you want to log in to your Apple account?". This is the key: it makes EAS use the stored profile **as-is and skip the capability sync** that disables it. **Do NOT use `--non-interactive`** for this build — it can reuse a cached Apple session and re-sync.
+
+**Standing rule:** **every future iOS production build must answer "No" to the Apple-login prompt**, or EAS re-disables the capability and the build breaks again. If the cert/profile is ever regenerated, repeat steps 1–3.
+
+**Revisit:** if a future eas-cli version fixes auto-capability detection for Sign in with Apple, this manual management can be dropped. Runbook detail: `docs/dogfooding.md`.
+
+### L25 — Home redesign: hub vs launchpad + one sanctioned gradient
+
+**Decided:** Mohamed, 2026-05-30 (Home redesign).
+
+- **Home = hub, Session = launchpad.** Home (`app/(tabs)/home.tsx`) is a focus dashboard: a pinned header (floq wordmark + today's date + avatar), a prominent streak banner, the **recommendation ring** — a live `computeSessionPlan` preview for the top task (no task → no ring) — with a one-line **coach voice** (regime + time-of-day fit + recovery), a tappable **UP NEXT** card for queue management, and a **"Go to Session →"** CTA + a "+" add square. The weekly **focus SCORE** lives on the Stats tab, not Home. The Session tab (`app/(tabs)/session.tsx`) is the launchpad — the same recommendation ring + **"Begin focus"** START. All 5 tabs stay (reverses the `docs/home-redesign-brief.md` proposal to drop Session).
 - **One sanctioned gradient — overrides design-system.md "No gradients. Anywhere."** A subtle app-wide background gradient (`components/ui/AppBackground.tsx`, `bg`→`bgBottom` token, rendered via the existing `react-native-svg`). It lives at the root BEHIND the whole app — every tab screen + behind the nav bar — with screens transparent (`contentStyle`/`sceneStyle` transparent) so it shows through. This is the ONLY gradient permitted; the spec's no-gradient rule otherwise stands everywhere else.
-- Task presentation is unified via `components/TaskSummary.tsx` (Easy/Medium/Hard, never "n/5"; long titles wrap). The queue sheet is a flat list (hairline dividers, pinned "+ Add manually" footer), not boxy cards.
-
-**Open (not decided):** whether the recommendation should respect the task estimate (a soft floor), so a 95-min task isn't recommended an 18-min block. Tracked against [[L20]] — Mohamed owns the timer; revisit separately.
+- Task presentation is unified via `components/TaskSummary.tsx` (Easy/Medium/Hard, never "n/5"; long titles wrap). The queue sheet is a flat, full-bleed list (hairline dividers, pinned "+ Add manually" footer), not boxy cards.
+- The recommendation-vs-task-estimate concern is **resolved by the L20 amendment** — a substantial task floors at one Pomodoro (`FOCUS_UNIT_MINUTES = 25`), so a 95-min exam is never recommended a throwaway 15-min block.
 
 ---
 

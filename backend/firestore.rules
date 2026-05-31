@@ -26,6 +26,26 @@ service cloud.firestore {
       }
     }
 
+    // L23 — anonymized ML training samples. Top-level + unlinked to any account
+    // on purpose (anonymous, not personal data). CREATE-ONLY for authenticated
+    // clients with strict shape validation (only the allowed keys; features a
+    // 13-length list; regime constrained); NO read/update/delete from any client
+    // (retraining reads offline via the Admin SDK). Additive — previously denied
+    // by the catch-all below. The shape check enforces the L4 invariant at the
+    // boundary: no uid / task title / free text can be written here.
+    match /training_samples/{sampleId} {
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly([
+             'features', 'focus_score', 'actual_focus_minutes',
+             'planned_focus_minutes', 'task_completed', 'regime',
+             'model_version', 'client_version', 'created_at'
+           ])
+        && request.resource.data.features is list
+        && request.resource.data.features.size() == 13
+        && request.resource.data.regime in ['cold', 'warming', 'mature'];
+      allow read, update, delete: if false;
+    }
+
     // Everything else stays denied until its feature lands.
     match /{document=**} {
       allow read, write: if false;

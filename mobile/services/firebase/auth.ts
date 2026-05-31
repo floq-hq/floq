@@ -13,6 +13,7 @@
 import { useEffect, useState } from 'react';
 import {
   GoogleAuthProvider,
+  OAuthProvider,
   createUserWithEmailAndPassword,
   getAuth,
   initializeAuth,
@@ -72,6 +73,14 @@ export class GoogleSignInCancelledError extends Error {
   constructor() {
     super('Google sign-in was cancelled.');
     this.name = 'GoogleSignInCancelledError';
+  }
+}
+
+/** Thrown when the user dismisses the Apple sheet. Callers treat it as a no-op. */
+export class AppleSignInCancelledError extends Error {
+  constructor() {
+    super('Apple sign-in was cancelled.');
+    this.name = 'AppleSignInCancelledError';
   }
 }
 
@@ -227,30 +236,85 @@ export function useCurrentUser(): { user: User | null; initializing: boolean } {
   return state;
 }
 
-// --- Scaffolds (decisions.md L13) ------------------------------------------
+// --- Apple (decisions.md L13 — enabled once the Developer membership was active) ---
+
+type AppleModule = typeof import('expo-apple-authentication');
+type CryptoModule = typeof import('expo-crypto');
+
+// Lazy native-module loads (mirrors loadGoogleSignin): a static import would
+// touch native code at module-load time and crash a dev client built before
+// these deps were added, breaking the email path too. Deferring keeps everything
+// else working until the next rebuild ships the native modules.
+function loadAppleAuth(): Promise<AppleModule> {
+  return import('expo-apple-authentication');
+}
+function loadCrypto(): Promise<CryptoModule> {
+  return import('expo-crypto');
+}
+
+/** True only where Sign in with Apple exists (iOS 13+). Drives whether the
+ *  welcome screen renders the Apple button. Swallows a missing-module error
+ *  (pre-rebuild client / Android) → false. */
+export async function isAppleAuthAvailable(): Promise<boolean> {
+  try {
+    const Apple = await loadAppleAuth();
+    return await Apple.isAvailableAsync();
+  } catch {
+    return false;
+  }
+}
 
 /**
- * Apple Sign-In — deferred until the $99 Apple Developer membership is active.
- * Real implementation (uncomment after `expo-apple-authentication` is installed,
- * the capability is enabled, and Apple is added as a Firebase provider):
- *
- *   const cred = await AppleAuthentication.signInAsync({
- *     requestedScopes: [FULL_NAME, EMAIL],
- *     nonce: hashedNonce,
- *   });
- *   const provider = new OAuthProvider('apple.com');
- *   const credential = provider.credential({ idToken: cred.identityToken!, rawNonce });
- *   const { user } = await signInWithCredential(auth, credential);
- *   await ensureUserDoc(user, {
- *     email: user.email ?? cred.email ?? '',
- *     display_name: cred.fullName?.givenName ?? user.displayName ?? 'Floq user',
- *     apple_id: cred.user,
- *   });
- *   return user;
+ * Sign in with Apple → Firebase. Uses a nonce: Apple receives the SHA-256 hash,
+ * Firebase receives the raw value (replay protection, per Apple + Firebase docs).
+ * Apple only returns name/email on the FIRST consent; ensureUserDoc's write-only-
+ * if-missing handles re-sign-in. A dismissed sheet → AppleSignInCancelledError
+ * (a UI no-op, like Google).
  */
 export async function signInWithApple(): Promise<User> {
-  throw new AuthNotConfiguredError('apple');
+  const Apple = await loadAppleAuth();
+  const Crypto = await loadCrypto();
+
+  const rawNonce = `${Crypto.randomUUID()}${Crypto.randomUUID()}`;
+  const hashedNonce = await Crypto.digestStringAsync(
+    Crypto.CryptoDigestAlgorithm.SHA256,
+    rawNonce,
+  );
+
+  let cred: Awaited<ReturnType<AppleModule['signInAsync']>>;
+  try {
+    cred = await Apple.signInAsync({
+      requestedScopes: [
+        Apple.AppleAuthenticationScope.FULL_NAME,
+        Apple.AppleAuthenticationScope.EMAIL,
+      ],
+      nonce: hashedNonce,
+    });
+  } catch (e) {
+    if ((e as { code?: string }).code === 'ERR_REQUEST_CANCELED') {
+      throw new AppleSignInCancelledError();
+    }
+    throw e;
+  }
+
+  if (!cred.identityToken) {
+    throw new Error('Apple sign-in returned no identityToken.');
+  }
+
+  const credential = new OAuthProvider('apple.com').credential({
+    idToken: cred.identityToken,
+    rawNonce,
+  });
+  const { user } = await signInWithCredential(auth, credential);
+  await ensureUserDocBestEffort(user, {
+    email: user.email ?? cred.email ?? '',
+    display_name: cred.fullName?.givenName ?? user.displayName ?? 'Floq user',
+    apple_id: cred.user,
+  });
+  return user;
 }
+
+// --- Scaffolds (decisions.md L13) ------------------------------------------
 
 /**
  * Phone Auth — deferred (decisions.md L13): SMS is billed on Blaze and the

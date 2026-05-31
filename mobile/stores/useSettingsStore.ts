@@ -15,6 +15,9 @@ interface SettingsState {
 
   hydrate: () => void;
   setBackgroundPolicy: (policy: BackgroundPolicy) => void;
+  setTelemetryConsent: (consent: boolean) => void;
+  setBreakReminderEnabled: (enabled: boolean) => void;
+  setSessionStartReminderEnabled: (enabled: boolean) => void;
   reset: () => void;
 }
 
@@ -31,6 +34,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
     hydrate: () => set({ settings: loadSettings(), hydrated: true }),
 
     setBackgroundPolicy: (policy) => commit({ ...get().settings, backgroundPolicy: policy }),
+    setTelemetryConsent: (consent) => commit({ ...get().settings, telemetryConsent: consent }),
+    setBreakReminderEnabled: (enabled) =>
+      commit({ ...get().settings, breakReminderEnabled: enabled }),
+    setSessionStartReminderEnabled: (enabled) =>
+      commit({ ...get().settings, sessionStartReminderEnabled: enabled }),
 
     reset: () => {
       clearSettings();
