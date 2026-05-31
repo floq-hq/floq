@@ -269,6 +269,7 @@ Every tab reads as the same app. The header skeleton and the scroll edge are sta
 
 - **Standard for every scrollable screen.** Wrap the ScrollView in a `scrollWrap` (`flex: 1`) and overlay `components/ui/ScrollFade.tsx` (`edge="top"`, `color={theme.bg}`) so content dissolves into the background as it scrolls under the pinned header — never a hard cut.
 - This `ScrollFade` is the **same react-native-svg gradient as `AppBackground`** and is part of the single sanctioned-gradient exception (L25). The no-gradient rule above otherwise still stands everywhere else.
+- **Pad the scroll content's top to clear the fade.** The fade overlay (~28px) is always present, not just while scrolling — so give the content `paddingTop ≈` the fade height. Otherwise the first item (especially a bordered card, e.g. More's profile header) is washed over by the fade at rest.
 - A non-scrolling screen (e.g. a static centered placeholder like the current Partner tab) needs no fade.
 
 ---

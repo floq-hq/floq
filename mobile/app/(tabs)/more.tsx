@@ -68,5 +68,7 @@ const styles = StyleSheet.create({
   root: { flex: 1, paddingHorizontal: TAB_PADDING },
   scrollWrap: { flex: 1 },
   scroll: { flex: 1 },
-  body: { gap: 28, paddingBottom: 32 },
+  // paddingTop clears the ~28px top ScrollFade so the first card (the profile
+  // header) isn't washed over by the fade at rest. See decisions.md L26.
+  body: { gap: 28, paddingTop: 28, paddingBottom: 32 },
 });

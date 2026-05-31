@@ -100,7 +100,9 @@ const styles = StyleSheet.create({
   root: { flex: 1, paddingHorizontal: TAB_PADDING },
   scrollWrap: { flex: 1 },
   scroll: { flex: 1 },
-  content: { gap: 16 },
+  // paddingTop clears the ~28px top ScrollFade so the hero isn't washed over at
+  // rest (decisions.md L26).
+  content: { gap: 16, paddingTop: 28 },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
