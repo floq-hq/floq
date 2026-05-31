@@ -62,11 +62,11 @@ export function SessionCardCurve({ data, insight }: { data: SessionCardData; ins
       </View>
 
       <View style={styles.hero}>
-        <Text variant="display" color={theme.text} style={styles.minutes}>
-          {minutes}
+        <Text variant="display" color={scoreColor} style={styles.minutes}>
+          {score}
         </Text>
         <Text variant="caption" color={theme.textMuted}>
-          min focused · {distractions} distraction{distractions === 1 ? '' : 's'}
+          focus score · {minutes} min · {distractions} distraction{distractions === 1 ? '' : 's'}
         </Text>
       </View>
 
@@ -156,9 +156,6 @@ export function SessionCardCurve({ data, insight }: { data: SessionCardData; ins
       </Text>
 
       <View style={styles.footer}>
-        <Text variant="caption" color={theme.textMuted}>
-          FOCUS SCORE <Text variant="caption" color={scoreColor}>{score}</Text>
-        </Text>
         <View style={styles.measuredBy}>
           <Text variant="caption" color={theme.textMuted}>
             Measured by
@@ -188,6 +185,6 @@ const styles = StyleSheet.create({
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   dot: { width: 8, height: 8, borderRadius: 4 },
   insight: { marginTop: 2 },
-  footer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 },
+  footer: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginTop: 2 },
   measuredBy: { flexDirection: 'row', alignItems: 'center', gap: 4 },
 });
