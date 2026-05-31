@@ -16,7 +16,9 @@ import {
   UserIcon,
   SunIcon,
   TimerIcon,
+  BellIcon,
   EyeIcon,
+  DatabaseIcon,
   InfoIcon,
   CapIcon,
 } from '../../components/ui';
@@ -36,14 +38,22 @@ export default function MoreTab() {
       <ScrollView contentContainerStyle={styles.body}>
         <ProfileHeader />
 
-        <MenuSection title="Account & settings">
+        <MenuSection title="Account">
           <MenuRow Icon={UserIcon} label="My account" subtitle="Name, email, sign out" onPress={() => router.push('/account')} />
-          <MenuRow Icon={SunIcon} label="Appearance" subtitle="Theme and display" onPress={() => router.push('/appearance')} />
-          <MenuRow Icon={TimerIcon} label="Session" subtitle="What counts as a distraction" onPress={() => router.push('/session-settings')} />
-          <MenuRow Icon={EyeIcon} label="Privacy" subtitle="What others can see" onPress={() => router.push('/privacy')} />
         </MenuSection>
 
-        <MenuSection title="Support">
+        <MenuSection title="Preferences">
+          <MenuRow Icon={SunIcon} label="Appearance" subtitle="Theme and display" onPress={() => router.push('/appearance')} />
+          <MenuRow Icon={TimerIcon} label="Session" subtitle="What counts as a distraction" onPress={() => router.push('/session-settings')} />
+          <MenuRow Icon={BellIcon} label="Notifications" subtitle="Break and daily reminders" onPress={() => router.push('/notifications-settings')} />
+        </MenuSection>
+
+        <MenuSection title="Data & privacy">
+          <MenuRow Icon={EyeIcon} label="Privacy & data" subtitle="Sharing and what others can see" onPress={() => router.push('/privacy')} />
+          <MenuRow Icon={DatabaseIcon} label="Your data" subtitle="What we collect, clear history" onPress={() => router.push('/data')} />
+        </MenuSection>
+
+        <MenuSection title="About">
           <MenuRow Icon={InfoIcon} label="About" subtitle="How Floq works, version" onPress={() => router.push('/about')} />
           <MenuRow Icon={CapIcon} label="Tutorials" subtitle="Short guides to get the most out of Floq" badge="Soon" disabled />
         </MenuSection>
