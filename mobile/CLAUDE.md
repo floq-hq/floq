@@ -115,3 +115,23 @@ Content lives in `app/_session-intro.tsx` and the copy is in `shared/spec/onboar
 - Don't fetch in screen components. Wrap with a TanStack Query hook in `services/`.
 - Don't use `useEffect` to drive the timer. Reanimated handles it.
 - Don't put business logic in screens. Push it down to `services/`.
+- Don't edit **frozen / safety-rule files** without explicit instruction: `services/timer/{coldStart,focusScore,phases}.ts` and their constants, `services/ml/` (Mohamed's lane), `backend/firestore.rules`, `services/firebase/auth.ts`, the SQLite schema in `models/` (write a migration — never edit in place). If you think one is wrong, surface the conflict.
+- Don't edit another owner's lane. Frontend (Mustafa / S-tasks) owns `app/`, `components/`, `theme/`, and the React side of `services/`. Backend/ML/timer (Mohamed / M-tasks) owns `services/{timer,ml,session,storage}`, `services/stats/aggregations`, `firebase/auth`, `models/`. On a cross-lane need: provide the **service/helper**, then **hand off the screen wiring** in the PR rather than editing the other lane.
+
+## Cross-device sync (services/sync/) — see the `floq-sync` skill
+
+Local (SQLite/MMKV) is the source of truth; Firestore is a **best-effort async mirror**. Sync must never block the UI and never lose a local write.
+
+- **Pull-down listeners only upsert or last-write-wins — they cannot represent a deletion.** An empty remote snapshot means "nothing newer," NOT "delete local." **Never infer a delete from a diff** — it nukes data created offline on a second device before it uploads. Deletions are an explicit **tombstone** event (`useDataWipeSync` + `decideWipeAction`, decisions L27).
+- **Loop-safe pulls:** persist a pulled queue via the no-mirror path; skip local-pending snapshots; dev-log listener errors only (`if (__DEV__) console.warn('[sync] …')`).
+- All sync hooks mount **once** under `app/(tabs)/_layout`, keyed on `uid`. Device-global MMKV sync state (e.g. the wipe markers) must be reset in `auth.signOut()`.
+- After a change to session/stats data, invalidate `statsKeys.all` (`['stats']`) — the one namespace every Stats/Home card lives under.
+- A setting that's **device-local by design stays local** — e.g. `telemetryConsent` is per-device per L23; confirm against `decisions.md` before mirroring any consent/privacy flag.
+
+## Pure logic lives in a tested helper, not in the hook or screen
+
+Applies to all of `services/` (stats, ml/forecast, sync, tasks), not just the timer. Any non-trivial decision/computation is a **pure, React-free, I/O-free function** with a colocated `__tests__/<name>.test.ts` (vitest) — e.g. `decideWipeAction`, `forecastNext7Days`/`shapeForecast`, the queue ops. The TanStack hook is a thin wrapper: it does the (synchronous) SQLite read and hands rows to the helper; no branching in the hook. Forecast/stats constants that are **calibration knobs** (horizon, smoothing α/β, band k) are tunable and must be commented as such — they are NOT the frozen science constants (those live only in `services/timer`).
+
+## Shipping: OTA vs rebuild — see the `ota-ship` skill
+
+`runtimeVersion.policy = "appVersion"`; channels `development`/`preview`/`production`. **Pure JS/TS → OTA** (`eas update`, tag "OTA-safe" like L26/L27). **Anything native** — a native dep, an `app.json` native field (permissions, capabilities, `version`, icons/**splash**), a config plugin — needs a full `eas build`, and bumping `version` bumps `runtimeVersion` which **strands users on older builds** (see `docs/dogfooding.md`). The iOS production build is manual-profile + **answer "No" to the Apple-login prompt** (L24) — never `--non-interactive`. Do the prep, hand the `eas build`/`eas update` command to Mohamed.

@@ -11,13 +11,13 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#0F0F0F",
-          "image": "./assets/splash-oq.png",
+          "backgroundColor": "#FAFAFA",
+          "image": "./assets/word-mix.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "dark": {
             "backgroundColor": "#0F0F0F",
-            "image": "./assets/splash-oq.png"
+            "image": "./assets/word-mix-dark.png"
           }
         }
       ],
