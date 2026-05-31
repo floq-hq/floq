@@ -254,6 +254,25 @@ The dot is the same color as the text. Diameter ~6px. It's a presence marker, no
 
 ---
 
+## Tab header + scroll fade (locked — decisions.md L26)
+
+Every tab reads as the same app. The header skeleton and the scroll edge are standardized; only Home is allowed to differ.
+
+### Header
+
+- **One shared shell: `components/TabHeader.tsx`.** A PINNED row — the screen `title` (28/600 token) on the left, an offline indicator on the right — at a consistent height. It never scrolls with the content.
+- **Metrics are fixed:** top padding `tabHeaderTopPadding(insetTop)` = `insetTop + 10`; horizontal gutter `TAB_PADDING` = `20`. Every tab body uses the same gutter so the title's left edge aligns with the content beneath it.
+- **Applies to Session / Stats / Partner / More.** Do not hand-roll a per-screen header (the pre-L26 state — mismatched insets `+10/+12/+56`, gutters 20 vs 24, a header that scrolled away, and a Session tab with no header).
+- **Home is the one exception** (owner call): it keeps its wordmark + today's date + avatar header. `TabHeader`'s constants are chosen to line up with Home so tab switches don't jump.
+
+### Scroll fade
+
+- **Standard for every scrollable screen.** Wrap the ScrollView in a `scrollWrap` (`flex: 1`) and overlay `components/ui/ScrollFade.tsx` (`edge="top"`, `color={theme.bg}`) so content dissolves into the background as it scrolls under the pinned header — never a hard cut.
+- This `ScrollFade` is the **same react-native-svg gradient as `AppBackground`** and is part of the single sanctioned-gradient exception (L25). The no-gradient rule above otherwise still stands everywhere else.
+- A non-scrolling screen (e.g. a static centered placeholder like the current Partner tab) needs no fade.
+
+---
+
 ## App icon
 
 Both variants ship — iOS supports light and dark app icons natively in 2026.
