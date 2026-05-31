@@ -17,8 +17,9 @@ import { router } from 'expo-router';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Button, Card, Text } from '../../components/ui';
+import { Button, Card, ScrollFade, Text } from '../../components/ui';
 import { TaskSummary } from '../../components/TaskSummary';
+import { TabHeader, tabHeaderTopPadding } from '../../components/TabHeader';
 import { PhaseJourney } from '../../components/session/PhaseJourney';
 import { regimeLabel, restedClause, windowClause } from '../../components/home/copy';
 import { FirstSessionFramingCard } from '../../components/FirstSessionFramingCard';
@@ -54,13 +55,18 @@ export default function SessionTab() {
 
   return (
     <View
-      style={[styles.root, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 16 }]}
+      style={[
+        styles.root,
+        { paddingTop: tabHeaderTopPadding(insets.top), paddingBottom: insets.bottom + 16 },
+      ]}
     >
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
+      <TabHeader title="Session" />
+      <View style={styles.scrollWrap}>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
         {topTask ? (
           <>
             <Card>
@@ -102,7 +108,9 @@ export default function SessionTab() {
             </Text>
           </View>
         )}
-      </ScrollView>
+        </ScrollView>
+        <ScrollFade edge="top" color={theme.bg} />
+      </View>
 
       <View style={styles.footer}>
         {topTask ? (
@@ -124,6 +132,7 @@ export default function SessionTab() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, paddingHorizontal: PADDING },
+  scrollWrap: { flex: 1 },
   scroll: { flex: 1 },
   scrollContent: { flexGrow: 1, justifyContent: 'center', gap: 20, paddingVertical: 12 },
   kicker: { letterSpacing: 1, marginBottom: 10 },

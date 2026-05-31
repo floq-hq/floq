@@ -428,6 +428,17 @@ The DONE-vs-end-early distinction is the user's **intent**, not the elapsed time
 - Task presentation is unified via `components/TaskSummary.tsx` (Easy/Medium/Hard, never "n/5"; long titles wrap). The queue sheet is a flat, full-bleed list (hairline dividers, pinned "+ Add manually" footer), not boxy cards.
 - The recommendation-vs-task-estimate concern is **resolved by the L20 amendment** — a substantial task floors at one Pomodoro (`FOCUS_UNIT_MINUTES = 25`), so a 95-min exam is never recommended a throwaway 15-min block.
 
+### L26 — Unified tab header + app-wide scroll-fade-under-header
+
+**Decided:** Mohamed, 2026-05-31. Follow-on to L25.
+
+**The gap:** post-L25 each non-Home tab hand-rolled its own header — different top insets (`+10 / +12 / +56`), different gutters (20 vs 24), Stats let its title scroll away inside the ScrollView, and the Session tab had **no header at all**. Headers sat at different heights and the spacing visibly jumped on tab switch (notably Stats↔More).
+
+- **One shared header shell — `components/TabHeader.tsx`.** A PINNED row (`title` type token left, an offline indicator right) at a consistent height, plus `tabHeaderTopPadding(insetTop)` (= `insetTop + 10`) and `TAB_PADDING` (= 20) exports. Applied to **Session / Stats / Partner / More**, all aligned to Home's header metrics (`insets.top + 10`, gutter 20). Session gains its previously-missing title; Stats' header moves OUTSIDE the ScrollView so it no longer scrolls away.
+- **Home is intentionally exempt** (owner call) — it keeps its distinct wordmark + today's date + avatar header. `TabHeader`'s constants are chosen to line up with Home's so switching tabs doesn't jump.
+- **Scroll fade under the header is now the standard for every scrollable screen.** The `components/ui/ScrollFade.tsx` overlay (`edge="top"`, `color={theme.bg}`, part of the L25 sanctioned-gradient exception) sits at the top of a `scrollWrap` (`flex: 1`) wrapping the ScrollView, so content dissolves into the background as it scrolls under the pinned header instead of a hard cut — matching Home. Applied to the scrolling tabs (Session, Stats, More); Partner is a static centered placeholder (no scroll, no fade).
+- **OTA-safe** (pure JS/TS, no native). S-side change. Detail mirrored in `design-system.md` → "Tab header + scroll fade".
+
 ---
 
 ## Open decisions — must resolve by end of W1

@@ -12,7 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   MenuRow,
   MenuSection,
-  Text,
+  ScrollFade,
   UserIcon,
   SunIcon,
   TimerIcon,
@@ -23,6 +23,7 @@ import {
   CapIcon,
 } from '../../components/ui';
 import { ProfileHeader } from '../../components/profile/ProfileHeader';
+import { TabHeader, TAB_PADDING, tabHeaderTopPadding } from '../../components/TabHeader';
 import { useTheme } from '../../theme';
 
 export default function MoreTab() {
@@ -30,13 +31,12 @@ export default function MoreTab() {
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top + 12 }]}>
-      <View style={styles.header}>
-        <Text variant="title">More</Text>
-      </View>
+    <View style={[styles.root, { paddingTop: tabHeaderTopPadding(insets.top) }]}>
+      <TabHeader title="More" />
 
-      <ScrollView contentContainerStyle={styles.body}>
-        <ProfileHeader />
+      <View style={styles.scrollWrap}>
+        <ScrollView style={styles.scroll} contentContainerStyle={styles.body}>
+          <ProfileHeader />
 
         <MenuSection title="Account">
           <MenuRow Icon={UserIcon} label="My account" subtitle="Name, email, sign out" onPress={() => router.push('/account')} />
@@ -57,13 +57,18 @@ export default function MoreTab() {
           <MenuRow Icon={InfoIcon} label="About" subtitle="How Floq works, version" onPress={() => router.push('/about')} />
           <MenuRow Icon={CapIcon} label="Tutorials" subtitle="Short guides to get the most out of Floq" badge="Soon" disabled />
         </MenuSection>
-      </ScrollView>
+        </ScrollView>
+        <ScrollFade edge="top" color={theme.bg} />
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, paddingHorizontal: 24 },
-  header: { marginBottom: 16 },
-  body: { gap: 28, paddingBottom: 32 },
+  root: { flex: 1, paddingHorizontal: TAB_PADDING },
+  scrollWrap: { flex: 1 },
+  scroll: { flex: 1 },
+  // paddingTop clears the ~28px top ScrollFade so the first card (the profile
+  // header) isn't washed over by the fade at rest. See decisions.md L26.
+  body: { gap: 28, paddingTop: 28, paddingBottom: 32 },
 });
