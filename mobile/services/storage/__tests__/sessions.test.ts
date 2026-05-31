@@ -68,12 +68,14 @@ describe('upsertRemoteSessions (cross-device sync)', () => {
     expect(getRecentSessions().map((s) => s.id)).toEqual(['b', 'a']); // newest first
   });
 
-  it('a later pull with updated fields replaces the row (no dupes)', () => {
+  it('does NOT overwrite an existing local row on re-pull (sessions are immutable; the remote echo carries less, e.g. taskId "")', () => {
     upsertRemoteSessions([makeSession({ id: 'x', focusScore: 10 })]);
+    // A later pull for the same id (an own-write echo / re-sync) must be ignored —
+    // the local row is authoritative and the remote doc omits task_id/features.
     upsertRemoteSessions([makeSession({ id: 'x', focusScore: 42 })]);
     const rows = getRecentSessions();
     expect(rows).toHaveLength(1);
-    expect(rows[0].focusScore).toBe(42);
+    expect(rows[0].focusScore).toBe(10); // kept the original local row, no clobber
   });
 
   it('no-ops on an empty pull', () => {

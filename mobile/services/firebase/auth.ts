@@ -37,6 +37,7 @@ import { useTaskStore } from '../../stores/useTaskStore';
 import { queryClient } from '../queryClient';
 import { deleteAllSessions } from '../storage/sessions';
 import { deleteAllTrainingSamples } from '../storage/trainingOutbox';
+import { clearWipeMarker } from '../sync/wipeMarker';
 
 // getReactNativePersistence is exported only from Firebase's React Native build
 // (Metro resolves it via the `react-native` condition), so it exists at runtime
@@ -219,6 +220,12 @@ export async function signOut(): Promise<void> {
   // L23: the local ML training outbox is also unfiltered by uid — clear it so
   // User A's un-uploaded samples never flush under User B's account.
   deleteAllTrainingSamples();
+  // L27: the cross-device wipe markers (floq.dataClearedAt[.self]) are device-
+  // global, not uid-scoped. If they survive sign-out, User A's stale selfInitiated
+  // flag can make User B's tombstone echo 'record' instead of 'wipe' (a real clear
+  // is skipped → data resurrection), and a stale applied-marker can 'noop' User B's
+  // legitimate clear. Reset them on every account switch.
+  clearWipeMarker();
 }
 
 // --- Current user hook -----------------------------------------------------
