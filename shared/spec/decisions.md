@@ -439,6 +439,20 @@ The DONE-vs-end-early distinction is the user's **intent**, not the elapsed time
 - **Scroll fade under the header is now the standard for every scrollable screen.** The `components/ui/ScrollFade.tsx` overlay (`edge="top"`, `color={theme.bg}`, part of the L25 sanctioned-gradient exception) sits at the top of a `scrollWrap` (`flex: 1`) wrapping the ScrollView, so content dissolves into the background as it scrolls under the pinned header instead of a hard cut — matching Home. Applied to the scrolling tabs (Session, Stats, More); Partner is a static centered placeholder (no scroll, no fade).
 - **OTA-safe** (pure JS/TS, no native). S-side change. Detail mirrored in `design-system.md` → "Tab header + scroll fade".
 
+### L27 — Cross-device "Clear history" propagates via a wipe tombstone
+
+**Decided:** Mohamed, 2026-05-31. Bug-fix follow-on to the L23-era Clear-history flow.
+
+**The bug:** "Clear history" deleted the cloud mirror (`users/{uid}/sessions` + `/tasks`) and local storage, but clearing on one device did **not** clear a second signed-in device of the same account. The pull-down listeners are structurally unable to represent a deletion: `useSessionSync` only **upserts** the snapshot (an empty cloud → upserts nothing → never removes local rows), and `useTaskSync` is **last-write-wins** (an empty cloud queue reports `updatedAt = 0`, which can never beat the local clock). The second device kept its data — and on its next edit **re-pushed the queue**, resurrecting it on the first device.
+
+**Fix — an explicit wipe event (tombstone), not an inferred diff:**
+- `wipeRemoteUserData` (after deleting the subcollections) stamps `users/{uid}.data_cleared_at = serverTimestamp()`. No Firestore rules change — owner-write on `users/{uid}` (M2.2) already covers the field.
+- A new listener `useDataWipeSync` (mounted beside `useSessionSync` in `(tabs)/_layout`) watches that field. When a tombstone **newer** than the wipe this device has already applied appears, it clears local history here too (`deleteAllSessions` + `deleteAllTrainingSamples` + task-store reset — exactly what the originating flow clears).
+- **Self-echo guard:** the initiating device sets a one-shot MMKV flag before stamping, so when its OWN tombstone echoes back it only advances the applied marker and does **not** re-wipe — protecting a session/task created in the seconds right after the clear. The decision is the pure, tested `decideWipeAction` (`noop` / `record` / `wipe`).
+- **Offline-safe:** a device offline during the wipe catches up on reconnect (`onSnapshot` delivers the current tombstone on subscribe). If the cloud delete fails (offline initiator) the deletes throw first, so neither the flag nor the tombstone is written — the existing "don't clear local-only" guarantee is preserved.
+- A full reinstall/fresh device still backfills nothing because the subcollection docs are also deleted; the tombstone is purely for **live** second devices. Why not full-reconcile the session listener instead? A "delete local rows not in the remote snapshot" would nuke sessions completed offline on the second device before they upload — the explicit, user-initiated tombstone avoids that class of false delete.
+- **OTA-safe** (pure JS/TS, no native). Lives entirely in `services/` (firebase + sync) plus one sync-wiring line in `(tabs)/_layout`; `app/data.tsx` is unchanged.
+
 ---
 
 ## Open decisions — must resolve by end of W1

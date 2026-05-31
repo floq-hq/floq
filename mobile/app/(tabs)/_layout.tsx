@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FloqTabBar, type TabKey } from '../../components/FloqTabBar';
 import { useSessionSync } from '../../services/sync/useSessionSync';
 import { useTaskSync } from '../../services/sync/useTaskSync';
+import { useDataWipeSync } from '../../services/sync/useDataWipeSync';
 import { useTelemetryFlush } from '../../services/sync/useTelemetryFlush';
 
 function AppTabBar({ state, navigation }: BottomTabBarProps) {
@@ -40,9 +41,11 @@ function AppTabBar({ state, navigation }: BottomTabBarProps) {
 
 export default function TabsLayout() {
   // Cross-device sync for the life of the signed-in tab tree: pull remote
-  // sessions (+ refresh stats) and the task queue (last-write-wins) in real time.
+  // sessions (+ refresh stats) and the task queue (last-write-wins) in real time,
+  // and propagate a "Clear history" wipe from any other device of this account.
   useSessionSync();
   useTaskSync();
+  useDataWipeSync();
   // L23: best-effort upload of consent-gated, anonymized training samples.
   useTelemetryFlush();
 
