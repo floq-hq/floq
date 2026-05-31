@@ -116,6 +116,13 @@ describe('clearTasks', () => {
     expect(mmkvStore.has(TASKS_KEY)).toBe(false);
     expect(loadTasks()).toEqual([]);
   });
+
+  it('also resets the LWW clock (so a cleared queue is not dominated by a stale timestamp)', () => {
+    saveQueueUpdatedAt(12345);
+    clearTasks();
+    expect(mmkvStore.has(TASKS_UPDATED_AT_KEY)).toBe(false);
+    expect(loadQueueUpdatedAt()).toBe(0);
+  });
 });
 
 // Cross-device task sync (LWW). The pull-down compares queue updated_at clocks;

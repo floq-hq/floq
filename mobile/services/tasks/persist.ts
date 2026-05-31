@@ -96,4 +96,7 @@ export function loadTasks(): Task[] {
 export function clearTasks(): void {
   deleteAllTasks();
   storage.remove(TASKS_KEY);
+  // Reset the LWW clock too, so a fresh queue after a clear isn't dominated by a
+  // stale "last edited" timestamp when the pull-down sync next compares (taskSync).
+  storage.remove(TASKS_UPDATED_AT_KEY);
 }
