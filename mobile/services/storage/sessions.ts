@@ -95,13 +95,23 @@ export function insertSession(s: CompletedSession): void {
   });
 }
 
-/** Upsert sessions pulled from the Firestore mirror (cross-device sync) into
- *  local SQLite. Reuses the idempotent `insertSession` (INSERT OR REPLACE by id +
- *  distraction re-insert), so re-pulling the same session — or a device seeing its
- *  own write echo back through the listener — is a harmless no-op. Sessions are
- *  immutable + id-keyed, so this is a conflict-free union; never deletes local rows. */
+/** True if a session row already exists locally. */
+function sessionExists(id: string): boolean {
+  return getDb().getAllSync('SELECT 1 FROM sessions WHERE id = ? LIMIT 1', id).length > 0;
+}
+
+/** Upsert sessions pulled from the Firestore mirror (cross-device sync) into local
+ *  SQLite. Sessions are IMMUTABLE + id-keyed, and the Firestore doc carries strictly
+ *  LESS than the local row (no task_id, no L23 feature vector — fromSessionDoc sets
+ *  taskId ''), so a row we already have must NOT be replaced: an own-write echo
+ *  coming back through the listener would otherwise clobber the local task_id with
+ *  '' (and needlessly re-insert distractions). Insert only sessions we don't already
+ *  have — a conflict-free union that never deletes or downgrades a local row. */
 export function upsertRemoteSessions(sessions: readonly CompletedSession[]): void {
-  for (const s of sessions) insertSession(s);
+  for (const s of sessions) {
+    if (sessionExists(s.id)) continue;
+    insertSession(s);
+  }
 }
 
 /** Join the distraction rows for a batch of session rows and return the full

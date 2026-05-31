@@ -42,3 +42,13 @@ export function loadWipeSelfInitiated(): boolean {
 export function clearWipeSelfInitiated(): void {
   storage.remove(WIPE_SELF_INITIATED_KEY);
 }
+
+/** Reset BOTH wipe-protocol keys. These are device-global (not uid-scoped), so
+ *  they MUST be cleared on sign-out — otherwise a stale `selfInitiated` flag makes
+ *  the next account's tombstone echo 'record' instead of 'wipe' (skipping a real
+ *  wipe → data resurrection), and a stale applied-marker can 'noop' the next
+ *  account's legitimate clear. Called from auth.signOut(). */
+export function clearWipeMarker(): void {
+  storage.remove(DATA_CLEARED_AT_KEY);
+  storage.remove(WIPE_SELF_INITIATED_KEY);
+}
