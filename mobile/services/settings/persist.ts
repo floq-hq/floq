@@ -10,9 +10,17 @@
 
 import { createMMKV } from 'react-native-mmkv';
 import { mirrorSettings } from './firestoreMirror';
-import { BACKGROUND_POLICIES, DEFAULT_SETTINGS, type Settings } from './types';
+import {
+  BACKGROUND_POLICIES,
+  DEFAULT_SETTINGS,
+  THEME_OVERRIDES,
+  type Settings,
+} from './types';
 
 export const SETTINGS_KEY = 'floq.settings';
+/** Legacy pre-settings-blob theme key (theme/ThemeContext used its own MMKV).
+ *  Migrated into the blob on load so an existing user keeps their theme choice. */
+const LEGACY_THEME_KEY = 'floq.theme_override';
 /** Last-write-wins clock: epoch ms of whatever settings version lives locally.
  *  Bumped on a local save; set to the remote's server ms when a newer remote blob
  *  is adopted (settingsSync). */
@@ -28,6 +36,9 @@ export function coerceSettings(parsed: unknown): Settings {
   const merged: Settings = { ...DEFAULT_SETTINGS, ...(parsed as Partial<Settings>) };
   if (!BACKGROUND_POLICIES.includes(merged.backgroundPolicy)) {
     merged.backgroundPolicy = DEFAULT_SETTINGS.backgroundPolicy;
+  }
+  if (!THEME_OVERRIDES.includes(merged.themeOverride)) {
+    merged.themeOverride = DEFAULT_SETTINGS.themeOverride;
   }
   merged.telemetryConsent = Boolean(merged.telemetryConsent);
   merged.breakReminderEnabled = Boolean(merged.breakReminderEnabled);
@@ -54,12 +65,25 @@ export function saveSettings(settings: Settings): void {
  *  corrupt/partial blob, with any unknown backgroundPolicy coerced to default. */
 export function loadSettings(): Settings {
   const raw = storage.getString(SETTINGS_KEY);
-  if (!raw) return { ...DEFAULT_SETTINGS };
-  try {
-    return coerceSettings(JSON.parse(raw));
-  } catch {
-    return { ...DEFAULT_SETTINGS };
+  let parsed: unknown = null;
+  if (raw) {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = null;
+    }
   }
+  const merged = coerceSettings(parsed);
+  // One-time migration: a blob that never carried a themeOverride inherits the
+  // legacy `floq.theme_override` key (written by the old ThemeContext) so an
+  // existing user's explicit light/dark choice isn't reset to 'system'.
+  if (!parsed || (parsed as Record<string, unknown>).themeOverride === undefined) {
+    const legacy = storage.getString(LEGACY_THEME_KEY);
+    if (legacy === 'light' || legacy === 'dark' || legacy === 'system') {
+      merged.themeOverride = legacy;
+    }
+  }
+  return merged;
 }
 
 /** Read the local settings LWW clock (epoch ms; 0 if never set). */

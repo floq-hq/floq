@@ -1,34 +1,34 @@
 /**
  * Theme provider + override store.
  *
+ * The theme override now lives in the synced settings blob (services/settings) so
+ * an explicit light/dark choice follows the user across devices (useSettingsSync).
  * Boot order (per `shared/spec/design-system.md`):
- *   1. Read `floq.theme_override` from MMKV synchronously on first render.
- *      MMKV is sync, so the very first paint already has the correct theme —
- *      no flash of the wrong theme. (AsyncStorage would flash; do not use it.)
- *   2. override === 'system' → follow `useColorScheme()` live.
- *   3. override === 'light' | 'dark' → use that, ignore `useColorScheme()`.
+ *   1. Read the override from MMKV synchronously on first render via
+ *      `loadSettings()` (MMKV is sync → the very first paint has the correct theme,
+ *      no flash; AsyncStorage would flash, do not use it). A legacy
+ *      `floq.theme_override` key is migrated by loadSettings.
+ *   2. After the settings store hydrates / a cross-device pull arrives, follow the
+ *      store's value.
+ *   3. override === 'system' → follow `useColorScheme()` live; 'light'|'dark' → use
+ *      that, ignore the OS.
  */
 import React, {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from 'react';
 import { useColorScheme } from 'react-native';
-import { createMMKV } from 'react-native-mmkv';
+import { useSettingsStore } from '../stores/useSettingsStore';
+import { loadSettings } from '../services/settings/persist';
+import { type ThemeOverride } from '../services/settings/types';
 import { darkTheme, lightTheme, type Theme } from './tokens';
 
-export type ThemeOverride = 'system' | 'light' | 'dark';
-
-const STORAGE_KEY = 'floq.theme_override';
-const storage = createMMKV();
-
-function readOverride(): ThemeOverride {
-  const stored = storage.getString(STORAGE_KEY);
-  return stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system';
-}
+export type { ThemeOverride };
 
 type ThemeContextValue = {
   theme: Theme;
@@ -40,15 +40,24 @@ type ThemeContextValue = {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  // Sync read on first render — no flash of wrong theme.
-  const [override, setOverrideState] = useState<ThemeOverride>(readOverride);
+  // Sync read on first render — no flash. After the store hydrates (boot) or a
+  // cross-device pull lands, follow the store's value.
+  const [override, setOverrideState] = useState<ThemeOverride>(() => loadSettings().themeOverride);
+  const storeHydrated = useSettingsStore((s) => s.hydrated);
+  const storeOverride = useSettingsStore((s) => s.settings.themeOverride);
+  useEffect(() => {
+    if (storeHydrated) setOverrideState(storeOverride);
+  }, [storeHydrated, storeOverride]);
+
   const systemScheme = useColorScheme(); // 'light' | 'dark' | null
 
   const scheme: 'light' | 'dark' =
     override === 'system' ? (systemScheme === 'dark' ? 'dark' : 'light') : override;
 
   const setOverride = useCallback((next: ThemeOverride) => {
-    storage.set(STORAGE_KEY, next);
+    // Persist through the store → settings blob → cross-device mirror. Update
+    // local state immediately for instant feedback (the store change echoes here).
+    useSettingsStore.getState().setThemeOverride(next);
     setOverrideState(next);
   }, []);
 

@@ -68,6 +68,23 @@ describe('loadSettings', () => {
     mmkvStore.set(SETTINGS_KEY, JSON.stringify({}));
     expect(loadSettings()).toEqual(DEFAULT_SETTINGS);
   });
+
+  it('coerces an unknown themeOverride back to system', () => {
+    mmkvStore.set(SETTINGS_KEY, JSON.stringify({ themeOverride: 'sepia' }));
+    expect(loadSettings().themeOverride).toBe('system');
+  });
+
+  it('migrates the legacy floq.theme_override key when the blob has no themeOverride', () => {
+    mmkvStore.set('floq.theme_override', 'dark'); // pre-settings-blob choice
+    mmkvStore.set(SETTINGS_KEY, JSON.stringify({ backgroundPolicy: 'strict' })); // no themeOverride
+    expect(loadSettings().themeOverride).toBe('dark');
+  });
+
+  it('does NOT let the legacy key override an explicit blob themeOverride', () => {
+    mmkvStore.set('floq.theme_override', 'dark');
+    mmkvStore.set(SETTINGS_KEY, JSON.stringify({ themeOverride: 'light' }));
+    expect(loadSettings().themeOverride).toBe('light');
+  });
 });
 
 describe('applyRemoteSettings (pull-down, no mirror)', () => {

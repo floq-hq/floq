@@ -12,7 +12,12 @@ import {
   loadSettings,
   saveSettings,
 } from '../services/settings/persist';
-import { DEFAULT_SETTINGS, type BackgroundPolicy, type Settings } from '../services/settings/types';
+import {
+  DEFAULT_SETTINGS,
+  type BackgroundPolicy,
+  type Settings,
+  type ThemeOverride,
+} from '../services/settings/types';
 
 interface SettingsState {
   settings: Settings;
@@ -20,6 +25,7 @@ interface SettingsState {
 
   hydrate: () => void;
   setBackgroundPolicy: (policy: BackgroundPolicy) => void;
+  setThemeOverride: (override: ThemeOverride) => void;
   setTelemetryConsent: (consent: boolean) => void;
   setBreakReminderEnabled: (enabled: boolean) => void;
   setSessionStartReminderEnabled: (enabled: boolean) => void;
@@ -42,6 +48,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
     hydrate: () => set({ settings: loadSettings(), hydrated: true }),
 
     setBackgroundPolicy: (policy) => commit({ ...get().settings, backgroundPolicy: policy }),
+    setThemeOverride: (override) => commit({ ...get().settings, themeOverride: override }),
     setTelemetryConsent: (consent) => commit({ ...get().settings, telemetryConsent: consent }),
     setBreakReminderEnabled: (enabled) =>
       commit({ ...get().settings, breakReminderEnabled: enabled }),

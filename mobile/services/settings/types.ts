@@ -9,8 +9,16 @@ export type BackgroundPolicy =
 
 export const BACKGROUND_POLICIES: readonly BackgroundPolicy[] = ['forgiving', 'strict'];
 
+/** Theme preference. 'system' follows the OS per-device; an explicit light/dark
+ *  is a user choice that syncs across devices (lives in the settings blob). */
+export type ThemeOverride = 'system' | 'light' | 'dark';
+export const THEME_OVERRIDES: readonly ThemeOverride[] = ['system', 'light', 'dark'];
+
 export interface Settings {
   backgroundPolicy: BackgroundPolicy;
+  /** Theme override (S2 / appearance). 'system' default; explicit light/dark
+   *  syncs cross-device. */
+  themeOverride: ThemeOverride;
   /** L23: opt-in to share anonymized session data for ML training. Default OFF
    *  (opt-in, never opt-out). Gates the egress in services/telemetry — local
    *  capture (training_outbox) is unconditional; only UPLOAD is consent-gated. */
@@ -25,6 +33,7 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   backgroundPolicy: 'forgiving',
+  themeOverride: 'system',
   telemetryConsent: false,
   breakReminderEnabled: true,
   sessionStartReminderEnabled: true,
