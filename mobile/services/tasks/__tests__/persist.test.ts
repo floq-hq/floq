@@ -2,11 +2,12 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { Task } from '../types';
 
 // In-memory MMKV fake (the fast-read cache layer).
-const { mmkvStore } = vi.hoisted(() => ({ mmkvStore: new Map<string, string>() }));
+const { mmkvStore } = vi.hoisted(() => ({ mmkvStore: new Map<string, string | number>() }));
 vi.mock('react-native-mmkv', () => ({
   createMMKV: () => ({
     getString: (k: string) => mmkvStore.get(k),
-    set: (k: string, v: string) => {
+    getNumber: (k: string) => mmkvStore.get(k),
+    set: (k: string, v: string | number) => {
       mmkvStore.set(k, v);
     },
     remove: (k: string) => {
@@ -27,7 +28,16 @@ const { upsertQueue, countTasks, deleteAllTasks, mirrorTasks } = vi.hoisted(() =
 vi.mock('../../storage', () => ({ upsertQueue, countTasks, deleteAllTasks }));
 vi.mock('../firestoreMirror', () => ({ mirrorTasks }));
 
-import { TASKS_KEY, saveTasks, loadTasks, clearTasks } from '../persist';
+import {
+  TASKS_KEY,
+  TASKS_UPDATED_AT_KEY,
+  saveTasks,
+  loadTasks,
+  clearTasks,
+  loadQueueUpdatedAt,
+  saveQueueUpdatedAt,
+  applyRemoteTasks,
+} from '../persist';
 
 function sample(): Task[] {
   return [
@@ -46,7 +56,7 @@ describe('saveTasks', () => {
   it('writes SQLite (source of truth), refreshes the MMKV cache, and fires the mirror', () => {
     saveTasks(sample());
     expect(upsertQueue).toHaveBeenCalledWith(sample());
-    expect(JSON.parse(mmkvStore.get(TASKS_KEY)!)).toEqual(sample());
+    expect(JSON.parse(mmkvStore.get(TASKS_KEY) as string)).toEqual(sample());
     expect(mirrorTasks).toHaveBeenCalledTimes(1);
   });
 
@@ -105,5 +115,30 @@ describe('clearTasks', () => {
     expect(deleteAllTasks).toHaveBeenCalledTimes(1);
     expect(mmkvStore.has(TASKS_KEY)).toBe(false);
     expect(loadTasks()).toEqual([]);
+  });
+});
+
+// Cross-device task sync (LWW). The pull-down compares queue updated_at clocks;
+// these cover the local clock + the no-mirror apply path that prevents an echo loop.
+describe('queue LWW clock', () => {
+  it('defaults to 0 and round-trips through save/load', () => {
+    expect(loadQueueUpdatedAt()).toBe(0);
+    saveQueueUpdatedAt(12345);
+    expect(loadQueueUpdatedAt()).toBe(12345);
+  });
+
+  it('saveTasks optimistically bumps the local clock above 0', () => {
+    saveTasks(sample());
+    expect(loadQueueUpdatedAt()).toBeGreaterThan(0);
+  });
+});
+
+describe('applyRemoteTasks (pull-down)', () => {
+  it('writes SQLite + cache + the LWW clock WITHOUT firing the mirror (no echo loop)', () => {
+    applyRemoteTasks(sample(), 9999);
+    expect(upsertQueue).toHaveBeenCalledWith(sample());
+    expect(JSON.parse(mmkvStore.get(TASKS_KEY) as string)).toEqual(sample());
+    expect(loadQueueUpdatedAt()).toBe(9999);
+    expect(mirrorTasks).not.toHaveBeenCalled(); // the whole point — pulled data isn't re-pushed
   });
 });

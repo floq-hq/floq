@@ -20,6 +20,7 @@ vi.mock('firebase/firestore', () => ({
   writeBatch: writeBatchMock,
   doc: docMock,
   Timestamp: { fromMillis: (ms: number) => ({ __ts: ms }) },
+  serverTimestamp: () => ({ __serverTs: true }),
 }));
 vi.mock('../../firebase/auth', () => ({ auth: authState }));
 vi.mock('../../firebase/init', () => ({ db: {} }));
@@ -54,7 +55,14 @@ describe('mirrorTasks', () => {
     expect(docMock).toHaveBeenCalledWith({}, 'users', 'u1', 'tasks', 'a');
     expect(batch.set).toHaveBeenCalledWith(
       { __path: 'users/u1/tasks/a' },
-      expect.objectContaining({ id: 'a', title: 'A', est_minutes: 30, order: 0, done: false }),
+      expect.objectContaining({
+        id: 'a',
+        title: 'A',
+        est_minutes: 30,
+        order: 0,
+        done: false,
+        updated_at: { __serverTs: true }, // LWW key for cross-device task sync
+      }),
     );
     expect(batch.delete).not.toHaveBeenCalled();
     expect(batch.commit).toHaveBeenCalledTimes(1);
