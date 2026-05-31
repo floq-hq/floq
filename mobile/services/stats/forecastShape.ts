@@ -16,7 +16,7 @@
 // here (mirrors how forecastUiState.ts imports the thresholds instead of hard-
 // coding 7/14).
 
-import { forecastNext7Days } from '../ml/forecast';
+import { forecastNext7Days, projectDampedScore } from '../ml/forecast';
 
 /** A single chart point. x = session index (past) or projected session index
  *  (forecast); y = focus score (un-clamped — can be negative, M4.1). */
@@ -53,14 +53,17 @@ export const FORECAST_HORIZON_SESSIONS = 3;
  * Geometry (x = session index):
  *  - `past`     — every observed score at its index 0..n-1 (the solid line).
  *  - `forecast` — anchored on the last past point (so solid → dashed is
- *                 continuous), projecting forward to the EWMA `predicted` level
- *                 over FORECAST_HORIZON_SESSIONS.
+ *                 continuous), projecting forward along the Holt TREND to
+ *                 `predicted + (H−1)·trend` over FORECAST_HORIZON_SESSIONS — a
+ *                 SLOPED line, not a flat level.
  *  - `confidenceBand` — fans out from the anchor (zero width at the known last
- *                 point) to the full EWMA band (`predicted ± k·σ`) at the
- *                 projection end, so uncertainty visibly grows forward.
+ *                 point) to a cone at the projection end that GROWS with the
+ *                 horizon (the 1-step half-width × √H), so uncertainty visibly
+ *                 widens the further out we predict.
  *
- * A constant series yields a zero-width band (collapses onto the forecast line);
- * negative scores pass through un-clamped; never returns NaN for a gated-in series.
+ * A constant series yields zero trend + a zero-width band (collapses onto the
+ * line); negative scores/trend pass through un-clamped; never NaN for a gated-in
+ * series.
  */
 export function shapeForecast(focusScores: readonly number[]): ForecastShape | null {
   const fc = forecastNext7Days(focusScores);
@@ -70,16 +73,28 @@ export function shapeForecast(focusScores: readonly number[]): ForecastShape | n
 
   const lastX = focusScores.length - 1;
   const lastY = focusScores[lastX];
-  const endX = lastX + FORECAST_HORIZON_SESSIONS;
 
   const anchor: ForecastPoint = { x: lastX, y: lastY };
 
+  // Sample the DAMPED-trend projection across the horizon (not just the endpoint)
+  // so the forecast renders as a CURVE that bends + flattens, not a straight line.
+  // The band's 1-step half-width (k·σ) widens by √h as the horizon grows.
+  const halfWidth1 = fc.upperBand - fc.predicted;
+  const forecast: ForecastPoint[] = [anchor];
+  const upper: ForecastPoint[] = [anchor];
+  const lower: ForecastPoint[] = [anchor];
+  for (let h = 1; h <= FORECAST_HORIZON_SESSIONS; h += 1) {
+    const x = lastX + h;
+    const y = projectDampedScore(fc, h);
+    const half = halfWidth1 * Math.sqrt(h);
+    forecast.push({ x, y });
+    upper.push({ x, y: y + half });
+    lower.push({ x, y: y - half });
+  }
+
   return {
     past: focusScores.map((y, i) => ({ x: i, y })),
-    forecast: [anchor, { x: endX, y: fc.predicted }],
-    confidenceBand: {
-      upper: [anchor, { x: endX, y: fc.upperBand }],
-      lower: [anchor, { x: endX, y: fc.lowerBand }],
-    },
+    forecast,
+    confidenceBand: { upper, lower },
   };
 }

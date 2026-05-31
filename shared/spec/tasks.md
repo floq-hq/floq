@@ -763,32 +763,36 @@ Goal by end of week: forecast graph is rendered, warming regime behaves correctl
 
 ## Mustafa — W6
 
-### S6.0 🔴 Shareable session card (per L18 — ships in EVERY scenario)
+### S6.0 🔴 Shareable session card (per L18 — ships in EVERY scenario) — ✅ redesigned 2026-05-31 (two cards + chooser)
 **Owner:** Mustafa (UI); data contract from focus score (M4.1) + phase data (M3.1) — **already exists**
 **Depends on:** S3.3 (session-end summary), M4.1 (focus score)
 **Unblocks:** distribution (the artifact is the marketing surface)
 **Skill:** none
-**Status:** path-agnostic — ships whether or not the L18 pairing bet wins.
+**Status:** path-agnostic — ships whether or not the L18 pairing bet wins. The v1 ribbon card was REJECTED (a flat ribbon, identical to the launchpad Phase Journey #167; "focus score 73" meant nothing to a stranger). **Redesigned 2026-05-31 (Mohamed) into TWO cards behind a share-time `SegmentedControl` toggle:** **C1 "focus curve"** (default — a smooth phase curve as the hero, minutes-focused as the legible number, score in the footer) and **C3 "editorial minimal"** (the insight sentence as a typographic hero + a thin ribbon). The curve is the deterministic four-phase MODEL scaled to actual minutes (honest, not a measured signal); phases from the frozen `phaseSegments` boundaries; no banned gradient (per-phase line color + flat fill).
 **Spec references:** `decisions.md` L18 (Monetization / distribution), `@shared/spec/design-system.md`
-**Files:** `mobile/components/session/SessionCard.tsx`; share affordance in the session-end flow
+**Files:** `mobile/components/session/SessionCardCurve.tsx` (C1), `SessionCardMinimal.tsx` (C3), `phaseCurveGeometry.ts` (pure curve math) + `services/chart/smoothPath.ts` (shared Catmull-Rom); the chooser + capture in `SessionCardModal.tsx`; old `SessionCard.tsx` deleted
 **Acceptance:**
-- renders **one** completed session as a screenshot-worthy artifact: phase curve (Struggle → Release → Flow), focus score as the hero number, a one-line insight ("your Tue mornings run 14% above your average"), a quiet Floq mark
-- **no task titles** (privacy); reads as "data about your brain," not "I used an app 🌱"
-- share / screenshot affordance in the S3.3 summary
-- **the test:** does the screenshot make sense to someone who's never heard of Floq? (if no, redesign)
+- C1 renders **one** completed session as a screenshot-worthy artifact: a smooth **phase curve** (Struggle → Release → Flow, real 0–20 / 20–21 / 21+ boundaries), minutes-focused hero, one-line insight, a quiet Floq mark; the focus score (un-clamped, negative → danger) sits in the footer
+- threaded `startedAt` `focus.tsx` → `session-summary` → card so the time-of-day insight fires (fixed bug-audit **#18**); share failure now surfaces (fixed bug-audit **#5**)
+- **no task titles** (privacy, L4); reads as "data about your brain," not "I used an app 🌱"
+- share / screenshot affordance in the S3.3 summary + the Stats Recent list
+- **the test:** does the screenshot make sense to someone who's never heard of Floq?
 - both themes
 
-### S6.1 🔴 Forecast graph rendering
+### S6.1 🔴 Forecast graph rendering — ✅ implemented 2026-05-31 (hand-rolled SVG)
 **Depends on:** S5.2, M6.1
 **Skill:** none
+**Charting decision (2026-05-31, Mohamed):** built **hand-rolled on `react-native-svg`**, NOT Victory Native. Victory's only RN-0.83 / New-Arch / React-19-compatible build (XL) needs `@shopify/react-native-skia` — two heavy native deps + a dev-client rebuild — for a 3-series chart; react-native-svg is already installed and proven (`HeroRing`). **Fallback to Victory (XL + Skia) only if the hand-rolled look fails.**
+**Smoothness fix (2026-05-31):** first cut looked jagged — the past line was a straight `<Polyline>` and the dev override fed a `±11` sawtooth. Fixed with a shared Catmull-Rom `services/chart/smoothPath.ts` (also used by the S6.0 curve card) + a realistic dev series.
 **Files:**
-- `mobile/components/stats/ForecastChart.tsx` — Victory Native chart
+- `mobile/components/stats/ForecastChart.tsx` — SVG chart (replaces the S5.2 `ForecastBand` stand-in, now deleted)
+- `mobile/components/stats/forecastChartGeometry.ts` — pure, unit-tested coordinate math
+- `mobile/components/stats/ForecastSection.tsx` — swapped to `useForecastShape()` + the chart; also fixed bug-audit **#7** (negative "-13 more sessions" countdown) via the new `forecastSectionView` 3-state decision
 **Acceptance:**
-- Past line drawn solid
-- Forecast drawn dashed
-- Confidence band rendered as shaded region
-- Renders cleanly in both themes (Victory needs explicit color props)
-- Empty / cold state hidden behind the regime gate
+- Past line drawn solid; forecast drawn dashed; confidence band a shaded region; "now" anchor dot + faint past↔forecast divider
+- Both themes (explicit tokens — accent / accentMuted / border / danger)
+- Un-clamped scores honest: zero baseline shows when crossing 0; negative projection turns the line + anchor `danger`
+- Empty / cold state hidden behind the regime gate (cold = badge + **positive** unlock countdown; gated-in-but-no-shape = neutral placeholder, never a negative countdown)
 
 ### S6.2 🔴 Animations + haptics pass
 **Depends on:** all prior screens

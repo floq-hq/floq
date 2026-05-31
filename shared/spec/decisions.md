@@ -47,10 +47,10 @@ Living document. Every architectural decision lives here. Two sections: **Locked
 **Date locked:** v0.3 blueprint
 **Reasoning:** Native-feeling minimal aesthetic. Performance. Fewer deps. The design system in `mobile/theme/` is the abstraction.
 
-### L8 — EWMA for the MVP forecast, LSTM/attention is post-MVP
+### L8 — Classical smoothing for the MVP forecast, learned encoder is post-MVP
 
-**Date locked:** v0.3 blueprint
-**Reasoning:** Data volume in W1–W8 doesn't justify a sequence model. EWMA is honest about uncertainty (via wide bands in warming regime).
+**Date locked:** v0.3 blueprint · **Updated 2026-05-31 (Mohamed):** the MVP forecast is now **Holt's linear** (level + **trend**), upgraded from flat EWMA so the prediction slopes along the recent trajectory with a horizon-widening cone — a genuine forecast, still classical/on-device. A true **learned sequence model (encoder) is post-MVP**: it needs **cross-USER** data (accrues via the W8 beta + L23 telemetry), not 7–16 points from one user; the M4 competition also showed naïve neural nets lose to exponential smoothing on short series, so the smart target is an **ES-RNN-style hybrid**. Full design + sequencing in `docs/forecast-encoder.md`.
+**Reasoning:** Data volume in W1–W8 doesn't justify a per-user sequence model. Trend-aware smoothing is honest about uncertainty (widening bands) and is literally step 1 (the "ES" half) of the eventual hybrid — nothing wasted.
 
 ### L9 — Expo SDK 55 (stable, locked exact)
 
@@ -545,7 +545,8 @@ Moved to Locked — see **L17**. Outcome: recovery is **skippable, not hard-enfo
 ## Decisions to revisit post-MVP (not now)
 
 - Mid-session adaptation (post-MVP per blueprint).
-- LSTM/attention forecast model (need 50+ sessions/user first).
+- Cross-user encoder forecaster (ES-RNN-style hybrid) — needs cross-user data via the beta + L23. Design: `docs/forecast-encoder.md`. (MVP ships Holt's linear, L8.)
+- Expanded Stats analytics (the forecast is just one analysis) — temporal/day-of-week performance, distraction + phase analytics, estimation calibration, records, trends, an insight-narrative layer. Roadmap: `docs/stats-postmvp.md`. Items 1–7 are pure on-device aggregations, shippable incrementally post-MVP.
 - App Store launch timing (after 4–6 weeks TestFlight).
 - Premium tier (only after 1000+ users).
 - Apple Watch companion.

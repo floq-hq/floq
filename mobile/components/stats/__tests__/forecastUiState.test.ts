@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   FORECAST_CONFIDENCE_CAPTION,
+  forecastSectionView,
   forecastUiState,
 } from '../forecastUiState';
 
@@ -32,5 +33,23 @@ describe('FORECAST_CONFIDENCE_CAPTION', () => {
     expect(FORECAST_CONFIDENCE_CAPTION.cold).toBeNull();
     expect(FORECAST_CONFIDENCE_CAPTION.warming).toBe('Forecast confidence: low');
     expect(FORECAST_CONFIDENCE_CAPTION.mature).toBe('Forecast confidence: high');
+  });
+});
+
+describe('forecastSectionView (audit #7)', () => {
+  it('shows the cold view (with countdown) only when truly cold', () => {
+    expect(forecastSectionView({ state: 'cold', hasShape: false })).toBe('cold');
+    // Cold stays cold even if a shape leaks in — count is below the gate.
+    expect(forecastSectionView({ state: 'cold', hasShape: true })).toBe('cold');
+  });
+
+  it('shows the chart when gated-in and the shape is present', () => {
+    expect(forecastSectionView({ state: 'warming', hasShape: true })).toBe('chart');
+    expect(forecastSectionView({ state: 'mature', hasShape: true })).toBe('chart');
+  });
+
+  it('shows a neutral placeholder — NOT a negative countdown — when count ≥ gate but the shape is missing', () => {
+    expect(forecastSectionView({ state: 'warming', hasShape: false })).toBe('placeholder');
+    expect(forecastSectionView({ state: 'mature', hasShape: false })).toBe('placeholder');
   });
 });

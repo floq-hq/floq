@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { forecastNext7Days, MIN_SESSIONS_FOR_FORECAST } from '../../ml/forecast';
+import {
+  forecastNext7Days,
+  MIN_SESSIONS_FOR_FORECAST,
+  projectDampedScore,
+} from '../../ml/forecast';
 import {
   FORECAST_HORIZON_SESSIONS,
   shapeForecast,
@@ -46,15 +50,32 @@ describe('shapeForecast', () => {
     expect(confidenceBand.lower[0]).toEqual(anchor);
   });
 
-  it('projects forward to the EWMA level and band (cross-checked against forecast.ts)', () => {
+  it('samples a damped-trend CURVE across the horizon (not a straight 2-point line)', () => {
     const scores = series(10);
     const fc = forecastNext7Days(scores)!;
-    const endX = scores.length - 1 + FORECAST_HORIZON_SESSIONS;
+    const lastX = scores.length - 1;
     const { forecast, confidenceBand } = shaped(scores);
 
-    expect(forecast.at(-1)).toEqual({ x: endX, y: fc.predicted });
-    expect(confidenceBand.upper.at(-1)).toEqual({ x: endX, y: fc.upperBand });
-    expect(confidenceBand.lower.at(-1)).toEqual({ x: endX, y: fc.lowerBand });
+    // One point per horizon step + the anchor → a multi-point curve.
+    expect(forecast).toHaveLength(FORECAST_HORIZON_SESSIONS + 1);
+    forecast.slice(1).forEach((p, i) => {
+      const h = i + 1;
+      expect(p.x).toBe(lastX + h);
+      expect(p.y).toBeCloseTo(projectDampedScore(fc, h), 10);
+    });
+
+    // Damping ⇒ each forward step adds LESS than the previous (the curve flattens),
+    // for a non-zero trend: |Δ(h2→h3)| < |Δ(h1→h2)|.
+    if (Math.abs(fc.trend) > 1e-9) {
+      const incr12 = Math.abs(forecast[2].y - forecast[1].y);
+      const incr23 = Math.abs(forecast[3].y - forecast[2].y);
+      expect(incr23).toBeLessThan(incr12);
+    }
+
+    // Cone widens with horizon (√h): the end half-width exceeds the 1-step band.
+    const endHalf =
+      confidenceBand.upper.at(-1)!.y - forecast.at(-1)!.y;
+    expect(endHalf).toBeGreaterThan(fc.upperBand - fc.predicted);
   });
 
   it('carries the warming-wide vs mature-tight band width (rides on forecast.ts)', () => {

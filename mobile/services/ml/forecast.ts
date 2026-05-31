@@ -1,9 +1,13 @@
-// EWMA performance forecast (M5.1) — Model B in shared/spec/ml-regimes.md.
+// Trend-aware performance forecast (M5.1 → M6.x) — Model B in ml-regimes.md.
 //
-// Predicts the user's next-7-day expected focus score from their historical
-// focus_score series. This is the MVP forecast: an exponential weighted moving
-// average, NOT a sequence model (LSTM/attention is post-MVP per decisions.md
-// L8 — EWMA is honest about uncertainty via wide bands while data is thin).
+// Predicts the user's near-future expected focus score from their historical
+// focus_score series using HOLT'S LINEAR exponential smoothing (level + trend):
+// the prediction follows the recent trajectory (sloped), not a flat average, so
+// it reads as a real forecast. This is the strong classical baseline the M4
+// competition showed is hard to beat on short series — and the "ES" half of the
+// eventual ES-RNN-style cross-user encoder (post-MVP, see decisions.md O11/L8 +
+// docs/forecast-encoder.md). A learned sequence model needs cross-USER data
+// (accrues via the W8 beta + L23 telemetry), not 7–16 points from one person.
 //
 // Gated SEPARATELY from the timer regime (ml-regimes.md "Performance forecast"):
 //   sessions  0–6  → hidden  (forecastNext7Days returns null)
@@ -18,12 +22,15 @@
 // read that feeds it lives in the useForecast() hook (services/stats/useStats),
 // per mobile/CLAUDE.md ("don't fetch in screens; push it down to services").
 
-/** A next-7-day forecast: a flat predicted focus score with a confidence band.
- *  The band widens/narrows with session count (see lowerBand/upperBand below).
- *  Scores can be negative (focus score is un-clamped, M4.1) — so can the bands;
- *  callers must not assume non-negativity. */
+/** A near-future forecast: the expected NEXT-session focus score (`predicted`),
+ *  the per-session `trend` (the slope the graph projects forward — can be
+ *  negative), and a 1-step confidence band. The band widens/narrows with session
+ *  count (see lowerBand/upperBand below) and grows with horizon downstream
+ *  (forecastShape). Scores can be negative (focus score is un-clamped, M4.1) — so
+ *  can the trend and bands; callers must not assume non-negativity. */
 export interface Forecast {
   predicted: number;
+  trend: number;
   lowerBand: number;
   upperBand: number;
 }
@@ -31,10 +38,36 @@ export interface Forecast {
 // --- Calibrated constants (tune with real beta data; none are frozen
 //     science constants — those live in services/timer) ---
 
-/** EWMA smoothing factor. 0.3 leans on history (smoother) while still tracking
+/** Level smoothing factor. 0.3 leans on history (smoother) while still tracking
  *  recent change — the spec's starting point ("alpha=0.3 (tune in testing)").
  *  Lower = smoother/slower, higher = more reactive. */
 export const FORECAST_ALPHA = 0.3;
+
+/** Trend smoothing factor (Holt's β). Deliberately LOW so the projected slope is
+ *  stable and doesn't whip around on a single good/bad session — important on the
+ *  short series this runs over. */
+export const FORECAST_BETA = 0.1;
+
+/** Trend DAMPING (Gardner's φ). A pure linear trend extrapolated forever is
+ *  unrealistic and reads as a stiff regression line; damping bends the projection
+ *  so each step adds φ^h·trend — the curve flattens out the further ahead it goes
+ *  (and a steep recent run can't run away). This is what makes the forecast a
+ *  CURVE, not a straight diagonal. */
+export const FORECAST_DAMPING = 0.85;
+
+/** Damped-trend projection `h` sessions past the last observation:
+ *  level + trend·Σ_{i=1..h} φ^i. h=0 → the level; growth tapers as h rises. Pure;
+ *  shared by forecastShape and its tests so the curve has one definition. */
+export function projectDampedScore(fc: Forecast, h: number): number {
+  const level = fc.predicted - fc.trend; // predicted is the 1-step level+trend
+  let factor = 0;
+  let term = 1;
+  for (let i = 1; i <= h; i += 1) {
+    term *= FORECAST_DAMPING;
+    factor += term;
+  }
+  return level + fc.trend * factor;
+}
 
 /** Below this many sessions the forecast is hidden (ml-regimes.md: 0–6 hidden).
  *  Exported so the Stats UI (S5.2) gates on the same threshold instead of
@@ -52,15 +85,25 @@ export const MATURE_FORECAST_THRESHOLD = 14;
 const WARMING_BAND_K = 1.5; // sessions 7–13 → wider
 const MATURE_BAND_K = 1.0; // sessions 14+  → tighter
 
-/** Recency-weighted level via EWMA, processed oldest→newest:
- *  S₀ = x₀; Sᵢ = α·xᵢ + (1−α)·Sᵢ₋₁. Returns the final level — the flat
- *  next-period prediction. Caller guarantees scores.length ≥ 1. */
-function ewmaLevel(scores: readonly number[], alpha: number): number {
+/** Holt's linear smoothing (level + trend), oldest→newest:
+ *    lᵢ = α·xᵢ + (1−α)·(lᵢ₋₁ + bᵢ₋₁)
+ *    bᵢ = β·(lᵢ − lᵢ₋₁) + (1−β)·bᵢ₋₁
+ *  Returns the final level and trend. The next-h-step forecast is l + h·b — a
+ *  sloped line, not a flat level. Caller guarantees scores.length ≥ 2 (the gate
+ *  is 7). Trend seeds from the first observed step. */
+function holtLinear(
+  scores: readonly number[],
+  alpha: number,
+  beta: number,
+): { level: number; trend: number } {
   let level = scores[0];
+  let trend = scores[1] - scores[0];
   for (let i = 1; i < scores.length; i += 1) {
-    level = alpha * scores[i] + (1 - alpha) * level;
+    const prevLevel = level;
+    level = alpha * scores[i] + (1 - alpha) * (level + trend);
+    trend = beta * (level - prevLevel) + (1 - beta) * trend;
   }
-  return level;
+  return { level, trend };
 }
 
 /** Sample standard deviation (n−1 denominator — we're estimating spread, not
@@ -74,20 +117,24 @@ function sampleStd(scores: readonly number[]): number {
 }
 
 /**
- * Forecast the next 7 days of focus score from the full chronological
- * focus_score series (oldest first). Returns `null` while the forecast is
- * gated off (< MIN_SESSIONS_FOR_FORECAST sessions) — the Stats screen reads
- * null as the cold-regime "we're still learning your rhythm" state.
+ * Forecast near-future focus score from the full chronological focus_score
+ * series (oldest first). Returns `null` while the forecast is gated off
+ * (< MIN_SESSIONS_FOR_FORECAST sessions) — the Stats screen reads null as the
+ * cold-regime "we're still learning your rhythm" state.
  *
- * Negative scores pass through un-clamped (M4.1 invariant); a constant series
- * yields a zero-width band; never returns NaN for a non-empty gated-in series.
+ * `predicted` is the expected NEXT session (level + trend); `trend` is the
+ * per-session slope the chart projects forward (forecastShape extends it over the
+ * horizon + widens the band). A flat series → zero trend + zero-width band;
+ * negative scores/trend pass through un-clamped (M4.1); never NaN for a gated-in
+ * series.
  */
 export function forecastNext7Days(focusScores: readonly number[]): Forecast | null {
   if (focusScores.length < MIN_SESSIONS_FOR_FORECAST) {
     return null;
   }
 
-  const predicted = ewmaLevel(focusScores, FORECAST_ALPHA);
+  const { level, trend } = holtLinear(focusScores, FORECAST_ALPHA, FORECAST_BETA);
+  const predicted = level + trend; // one session ahead
   const spread = sampleStd(focusScores);
   const k =
     focusScores.length >= MATURE_FORECAST_THRESHOLD ? MATURE_BAND_K : WARMING_BAND_K;
@@ -95,6 +142,7 @@ export function forecastNext7Days(focusScores: readonly number[]): Forecast | nu
 
   return {
     predicted,
+    trend,
     lowerBand: predicted - halfWidth,
     upperBand: predicted + halfWidth,
   };

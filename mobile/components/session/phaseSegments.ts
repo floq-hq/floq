@@ -19,8 +19,11 @@ export interface PhaseSegment {
   fraction: number;
 }
 
-const STRUGGLE_END_MIN = 20; // timer.md: Struggle [0, 20:00)
-const FLOW_START_MIN = 21; // timer.md: Release [20:00, 21:00), Flow from 21:00
+// Exported so the phase-curve geometry (phaseCurveGeometry.ts) shapes its
+// engagement curve on the SAME frozen boundaries — one source, guarded against
+// phaseFor() by __tests__/phaseSegments.test.ts (no third copy of 20/21).
+export const STRUGGLE_END_MIN = 20; // timer.md: Struggle [0, 20:00)
+export const FLOW_START_MIN = 21; // timer.md: Release [20:00, 21:00), Flow from 21:00
 
 /** Segment the actual focused minutes into Struggle/Release/Flow. Returns only
  *  the phases with > 0 time (a short session is all Struggle); empty for a
