@@ -30,6 +30,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useKeepAwake } from 'expo-keep-awake';
 import {
   runOnJS,
   useAnimatedReaction,
@@ -80,6 +81,11 @@ function parsePlan(raw: string | string[] | undefined): SessionPlan | null {
 }
 
 export default function SessionScreen() {
+  // Keep the screen awake for the whole session — a focus timer must not let the
+  // device auto-lock mid-session. Active while /focus is mounted (session start →
+  // DONE/end-early), released automatically on unmount.
+  useKeepAwake();
+
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ taskId?: string; plan?: string }>();
