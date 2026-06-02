@@ -879,12 +879,14 @@ Goal by end of week: a user invites a specific person who installs and lands **a
 
 ## Mustafa — W7 (all UI)
 
-### S7.0 🔴 Invite / install-and-pair flow + all claim states
+### S7.0 🔴 Invite / install-and-pair flow + all claim states — ✅ done 2026-06-02
 **Depends on:** M7.0 · **Skill:** none
 **Acceptance:**
-- Invite card carries the 6-char code (printed + link pre-fill). Cold install → onboarding → auth → single "Have an invite code?" field → `acceptInvite` → lands `active` immediately.
-- States handled: already-paired, simultaneous (idempotent), expired, self-pair, revoked, re-pair after `ended`, blocked, **partner-dormant** ("{name} joined — hasn't focused yet" + resend, non-blaming), dead issuer, **offline at the install→pair seam** (explicit Retry, code persisted).
-- No-friend "**Skip — focus solo**" → calm solo; a non-inert "I want a partner" intent toggle in the Partner tab. Solo NEVER blocked.
+- Invite card carries the 6-char code (printed + link pre-fill). Cold install → onboarding → auth → single "Have an invite code?" field → `acceptInvite` → lands `active` immediately. — ✅ `PendingInviteCard` (code + Share + Cancel), `InviteCodeField` (accept), `app/pair.tsx` seam (onboarding `ready` routes here once; `floq://pair?code=` deep-links here pre-filled)
+- States handled: already-paired, simultaneous (idempotent), expired, self-pair, revoked, re-pair after `ended`, blocked, **partner-dormant**, dead issuer, **offline at the install→pair seam** (explicit Retry, code persisted). — ✅ pure `claimCopy()` maps all 9 `AcceptReason`s + synthetic `offline`; offline persists the code (`pendingAcceptCode` MMKV) for Retry. ⚠️ **partner-dormant copy is best-effort** pending M7.1 (no partner-activity signal yet)
+- No-friend "**Skip — focus solo**" → calm solo; a non-inert "I want a partner" intent toggle in the Partner tab. Solo NEVER blocked. — ✅ `/pair` Skip→Home; Partner-tab "I want a partner" toggle (`wantPartner` MMKV)
+**Built:** `services/partner/{claimCopy,usePartnerStatus,localInvite}.ts` + `components/partner/{InviteCodeField,PendingInviteCard}.tsx` + Partner-tab 3-state machine (solo / pendingSent / paired) + `app/pair.tsx`. Partner-state read is a FRONTEND hook (`usePartnerStatus`) reading the owner-readable pointer + invite docs — collapses onto a canonical `getMyPartner()` if Mohamed adds one. All pure JS → OTA-safe; `claimCopy` unit-tested.
+**Open (coordinate):** (1) `clearLocalPartnerState()` must be called in `auth.signOut()` (Mohamed's `firebase/auth.ts`) so partner state doesn't leak across accounts on a device; (2) `partnerName` + dormant resolve once M7.1's social-summary projection lands. Partner view / presence / reactions / remove-block are S7.1–S7.3.
 
 ### S7.1 🔴 Partner view + reaction
 **Depends on:** M7.1, M7.2 · **Acceptance:** partner's live presence + completed summaries (minutes/score/when — never titles); one-tap reaction anchored to the original session context; both themes.

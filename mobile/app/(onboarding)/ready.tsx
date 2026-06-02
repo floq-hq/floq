@@ -36,7 +36,10 @@ export default function Ready() {
       // it may prompt for permission here. Fire-and-forget; never blocks Home.
       const preferred = useOnboardingStore.getState().answers?.preferred_time;
       if (preferred) void scheduleSessionStartReminder(preferred);
-      router.replace('/home');
+      // S7.0 F: a brand-new user passes through the install→pair seam once
+      // (it's fully skippable → /home). Returning users skip onboarding entirely
+      // via the gate, so they never hit this — they pair from the Partner tab.
+      router.replace('/pair');
     } catch {
       setError('Couldn’t save your answers. Check your connection and try again.');
       setBusy(false);
