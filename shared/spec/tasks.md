@@ -794,25 +794,23 @@ Goal by end of week: forecast graph is rendered, warming regime behaves correctl
 - Un-clamped scores honest: zero baseline shows when crossing 0; negative projection turns the line + anchor `danger`
 - Empty / cold state hidden behind the regime gate (cold = badge + **positive** unlock countdown; gated-in-but-no-shape = neutral placeholder, never a negative countdown)
 
-### S6.2 🔴 Animations + haptics pass — ✅ done 2026-06-02
+### S6.2 🔴 Animations + haptics pass
 **Depends on:** all prior screens
 **Skill:** none
 **Acceptance:**
-- Phase indicator color transition smooth (800ms easeInOut per spec) — ✅ already in `PhaseIndicator.tsx` (withTiming 800ms `Easing.inOut`, cancel-in-flight guard)
-- Distraction button has medium-impact haptic — ✅ now via the shared `services/haptics.impactMedium()`
-- Done button has success haptic — ✅ added `notifySuccess()` in `app/focus.tsx onDone` (fires only on a completed session)
-- Tab switches animate cleanly — ✅ already in `FloqTabBar` (animated indicator slide, `indicatorTranslateX`)
-- Onboarding screen transitions feel calm (no spring bounces) — ✅ already `animation: 'fade'` in `app/(auth)/_layout.tsx`
-**Done:** the only genuine gap was the DONE success haptic; the rest landed in S3.x. New `services/haptics.ts` (guarded `impactMedium`/`notifySuccess`) centralizes the native-module guard. All pure JS (expo-haptics/reanimated already installed) → OTA-safe. Haptics only fire on a real device (no Taptic Engine on the simulator).
+- Phase indicator color transition smooth (800ms easeInOut per spec)
+- Distraction button has medium-impact haptic
+- Done button has success haptic
+- Tab switches animate cleanly
+- Onboarding screen transitions feel calm (no spring bounces)
 
-### S6.3 🟡 Accessibility pass — ✅ done 2026-06-02
+### S6.3 🟡 Accessibility pass
 **Depends on:** all prior screens
 **Skill:** none
 **Acceptance:**
-- VoiceOver tested: all interactive elements have accessible labels — ✅ codebase already broadly labeled (TextField/Button/tab bar carry role+label, animated timers hidden); fixed the one gap (`SessionCardModal` backdrop `role="button"`+`"Dismiss"`, inner tap-absorber `accessible={false}`)
-- Dynamic Type tested: app doesn't break at the largest text size — ✅ verified at AX-XXXL; capped the hero numbers (`HeroScore`, `HeroRing`) + tab labels, buttons grow (`minHeight`) and wrap. Residual at the absolute-max size is prose under pinned CTAs / mid-word card-title wrapping — accepted graceful degradation (all controls reachable)
-- Contrast verified on both themes — ✅ computed WCAG ratios from `tokens.ts`. textMuted/success/danger pass. Phase-pill **label** now uses new `phaseInk` tokens (≥4.5:1; light recovery 2.39→4.68) while the dot keeps the vivid phase color; `accent`-as-small-text marginal cases (3.95–4.12, brand-frozen) documented as accepted
-**Done:** added `phaseInk` token group + `design-system.md` a11y note. All pure JS → OTA-safe.
+- VoiceOver tested: all interactive elements have accessible labels
+- Dynamic Type tested: app doesn't break at the largest text size
+- Contrast verified on both themes (use the macOS Color Picker or a contrast plugin)
 
 ---
 
@@ -879,14 +877,12 @@ Goal by end of week: a user invites a specific person who installs and lands **a
 
 ## Mustafa — W7 (all UI)
 
-### S7.0 🔴 Invite / install-and-pair flow + all claim states — ✅ done 2026-06-02
+### S7.0 🔴 Invite / install-and-pair flow + all claim states
 **Depends on:** M7.0 · **Skill:** none
 **Acceptance:**
-- Invite card carries the 6-char code (printed + link pre-fill). Cold install → onboarding → auth → single "Have an invite code?" field → `acceptInvite` → lands `active` immediately. — ✅ `PendingInviteCard` (code + Share + Cancel), `InviteCodeField` (accept), `app/pair.tsx` seam (onboarding `ready` routes here once; `floq://pair?code=` deep-links here pre-filled)
-- States handled: already-paired, simultaneous (idempotent), expired, self-pair, revoked, re-pair after `ended`, blocked, **partner-dormant**, dead issuer, **offline at the install→pair seam** (explicit Retry, code persisted). — ✅ pure `claimCopy()` maps all 9 `AcceptReason`s + synthetic `offline`; offline persists the code (`pendingAcceptCode` MMKV) for Retry. ⚠️ **partner-dormant copy is best-effort** pending M7.1 (no partner-activity signal yet)
-- No-friend "**Skip — focus solo**" → calm solo; a non-inert "I want a partner" intent toggle in the Partner tab. Solo NEVER blocked. — ✅ `/pair` Skip→Home; Partner-tab "I want a partner" toggle (`wantPartner` MMKV)
-**Built:** `services/partner/{claimCopy,usePartnerStatus,localInvite}.ts` + `components/partner/{InviteCodeField,PendingInviteCard}.tsx` + Partner-tab 3-state machine (solo / pendingSent / paired) + `app/pair.tsx`. Partner-state read is a FRONTEND hook (`usePartnerStatus`) reading the owner-readable pointer + invite docs — collapses onto a canonical `getMyPartner()` if Mohamed adds one. All pure JS → OTA-safe; `claimCopy` unit-tested.
-**Open (coordinate):** (1) `clearLocalPartnerState()` must be called in `auth.signOut()` (Mohamed's `firebase/auth.ts`) so partner state doesn't leak across accounts on a device; (2) `partnerName` + dormant resolve once M7.1's social-summary projection lands. Partner view / presence / reactions / remove-block are S7.1–S7.3.
+- Invite card carries the 6-char code (printed + link pre-fill). Cold install → onboarding → auth → single "Have an invite code?" field → `acceptInvite` → lands `active` immediately.
+- States handled: already-paired, simultaneous (idempotent), expired, self-pair, revoked, re-pair after `ended`, blocked, **partner-dormant** ("{name} joined — hasn't focused yet" + resend, non-blaming), dead issuer, **offline at the install→pair seam** (explicit Retry, code persisted).
+- No-friend "**Skip — focus solo**" → calm solo; a non-inert "I want a partner" intent toggle in the Partner tab. Solo NEVER blocked.
 
 ### S7.1 🔴 Partner view + reaction
 **Depends on:** M7.1, M7.2 · **Acceptance:** partner's live presence + completed summaries (minutes/score/when — never titles); one-tap reaction anchored to the original session context; both themes.
