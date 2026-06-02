@@ -456,6 +456,47 @@ The DONE-vs-end-early distinction is the user's **intent**, not the elapsed time
 
 ---
 
+### L28 — Live coarse co-presence is allowed; the "async-only" thesis is amended (not abandoned), and L2's egress boundary is clarified
+
+**Decided:** Mohamed, 2026-06-01. Gates W7. Amends the async-only social thesis (`docs/strategy-social-as-core.md`, `docs/floq-direction-brief.md`); clarifies **L2**; reaffirms **L4**. Full reasoning + the W7 plan it unblocks: `docs/w7-social-plan-draft.md`, `docs/w7-social-onepager.md`.
+
+**The gap:** the prior thesis was async-only ("no live session"). A purely async partner — a feed you check later — is the passive-leaderboard failure mode the pivot exists to escape, and a W8 read of "does pairing work" would be confounded by testing the weakest accountability mechanic. True synchronous co-working (a shared Focusmate clock) is rejected — it kills the per-user adaptive-timer moat. Resolved position is the middle: **live co-presence with independent clocks.**
+
+**Decision:**
+- **Real-time COARSE presence is allowed:** a partner may see, live, that you are `focusing` / your phase / `just_finished`, and your completed-session **summary** (minutes / score / when). Each person stays on their **own** ML-adaptive length — **no shared clock** (true sync stays rejected).
+- **L2 is nudged, not broken:** coarse, **consented**, non-raw presence/summary state MAY leave the device to a **known partner**. Raw behavioral vectors + the on-device model stay on-device. Same shape of consented egress as L23.
+- **L4 reaffirmed, unchanged:** **task titles NEVER leave the device** to any partner/room, consent or not. Partner reads hit a stripped `social/summary` projection, never a raw title-bearing doc.
+- **Consent is explicit, default-OFF, per-partner, revocable** (one pairing-consent at connection; mute/unpair revokes).
+- Live presence renders **only at session boundaries**, **never mid-session** — the focused middle stays sacred; no notification fires during a session.
+
+---
+
+### L29 — W7 executes L18 Phase A as "recruit-first, measure the LOOP"; causal retention (Axis B) is deferred to W9
+
+**Decided:** Mohamed, 2026-06-01. Executes L18 (social-as-core, Phase A); the L18 revert path is **unchanged**.
+
+**The gap:** L18 framed the W8 beta as a retention read ("do paired users out-retain solos?"). At a beta n of ~10–16 pairs with a two-person team, a clean causal retention read is **operationally impossible** (no runnable control arm, no power). Treating an unpowered number as the go/revert signal would be measurement theater.
+
+**Decision:**
+- **The W7 deliverable is the LOOP, not retention.** Recruit users **as pairs from Day 0** (an M-owned list, its own ask→yes→sent→installed funnel instrumented). The dominant, design-addressable multiplier is **pairing rate** — that is what W7 hardens and W8 reads.
+- **W8 read = Axis A only:** invite→install→pair convert · start-together · reaction · broadcast-card claim (the one k>1 probe).
+- **Axis B (causal per-pair retention lift) → W9**, including the coupling check (do paired users churn *faster* than solo?).
+- **Decision rule:** below the loop-readable pair threshold the question is **UNANSWERED** → **slip the beta a week and keep recruiting.** Do **not** launder a thin result into "build the Room," and do **not** fire the L18 pass/revert call on it.
+
+**Implications:** no randomized solo-control arm in W7; pair-streak engine + the Room ship **dark** (flags off); recruiting is a first-class M-task.
+
+---
+
+### L30 — A narrow member-only cross-tree write-grant for ending a partnership
+
+**Decided:** Mohamed, 2026-06-01. Touches `backend/firestore.rules` (additive + backward-compatible per the safety rule).
+
+**The gap:** rules are owner-only; a partnership is **co-owned**. Ending it (REMOVE/BLOCK) must flip the shared `partnerships/{pairId}` to `ended` **and** null the *ex-partner's* `users/{otherUid}/partner` pointer — writes into a tree the owner-only rule forbids. Without it, unpair/wipe leaves a dangling pointer and a live presence read on someone you removed (a stalking primitive).
+
+**Decision:** add ONE scoped rule — a **partnership member** may flip THEIR `partnerships/{pairId}` to `ended` (and set `blocked_by` on block) and null the **counterpart's** `partner` pointer — **that transition only**, nothing else on the other tree. Non-member denied. Proven by an emulator test (member can end; non-member denied; no other cross-tree field writable). This is the only place a user writes outside their own tree.
+
+---
+
 ## Open decisions — must resolve by end of W1
 
 ### O1 — LLM provider ✅ RESOLVED (2026-05-24)
@@ -545,6 +586,7 @@ Moved to Locked — see **L17**. Outcome: recovery is **skippable, not hard-enfo
 
 ## Decisions to revisit post-MVP (not now)
 
+- **User-created Rooms with chosen visibility** (Mohamed, 2026-06-01 — captured, deferred; pairs stay the core for now). Beyond the ambient auto-pool scaffolded dark in the W7 plan (F8): a user can **create a room and invite others**, choosing visibility — **public** (anyone can find/join) or **link-only** (joinable via invite link only). Sequencing when we build it: **link-only ships first** — it's invite-gated/known-people, a clean Phase-A fit (the study-pod), no new safety surface. **Public-discovery waits** — it reintroduces strangers + discovery, which means moderation, App-Store UGC/safety review, and small-n liquidity/ghost-town risk, and it tensions L4's friend-only spirit (Phase-B territory, gated on the pairing loop proving out per L29). Both stay behind `FLAG_ROOM_LIVE` until then.
 - Mid-session adaptation (post-MVP per blueprint).
 - Cross-user encoder forecaster (ES-RNN-style hybrid) — needs cross-user data via the beta + L23. Design: `docs/forecast-encoder.md`. (MVP ships Holt's linear, L8.)
 - Expanded Stats analytics (the forecast is just one analysis) — temporal/day-of-week performance, distraction + phase analytics, estimation calibration, records, trends, an insight-narrative layer. Roadmap: `docs/stats-postmvp.md`. Items 1–7 are pure on-device aggregations, shippable incrementally post-MVP.

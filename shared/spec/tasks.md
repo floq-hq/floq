@@ -816,69 +816,99 @@ Goal by end of week: forecast graph is rendered, warming regime behaves correctl
 
 # Week 7 — Partnership core
 
-> **Per L18 (2026-05-27) — social-as-core:** the W7 plan is the **focus partnership** (`docs/strategy-social-as-core.md`, `docs/floq-direction-brief.md`). The prior W7 friend-graph / leaderboard / async-feed tasks (M7.1–M7.3, S7.1–S7.2) are retained in **git history** (pre-`spec/social-core-pivot`) for the L18 revert path — not dual-maintained here.
+> **Per L18 (social-as-core) + L28/L29/L30 (locked 2026-06-01).** Full plan: `docs/w7-social-plan-draft.md`; one-pager: `docs/w7-social-onepager.md`. The prior friend-graph/leaderboard tasks remain in git history (pre-`spec/social-core-pivot`) for the L18 revert path.
+>
+> **Mohamed is at FULL capacity (Egypt changes nothing).** All W7 ships **OTA — no native rebuild**.
 
-Goal: a user can pair with **one** focus partner, see the partner's scheduled + completed sessions, share a **gently-designed** pair streak, and — critically — a new solo user has a great experience **while waiting for a partner**. The make-or-break is the **activation funnel (time-to-first-partner)**, not the streak.
+Goal by end of week: a user invites a specific person who installs and lands **already paired**; partners see each other's live **coarse** presence + completed-session summaries (**never task titles**, L4) and can react; the loop is fully instrumented; the privacy floor (wipe/delete) covers every new surface. The make-or-break is **pairing rate** — recruiting runs from **Day 0**. No streak, no Room (both ship dark, per L29).
 
-## Mohamed — W7
+## Day 0 — locks + prereqs (before code)
 
-### M7.0 🔴 Partner edge + invite + partner-visible session service (resolves O5 via L18)
-**Owner:** Mohamed
-**Depends on:** M2.4 (auth), M4.2 (sessions in SQLite + Firestore mirror)
-**Unblocks:** S7.0
-**Skill:** `floq-firestore`
-**Spec references:** `decisions.md` L18 + (resolved) O5; `schema.md` (`partnerships` / `partner_invites`); the `floq-firestore` skill
-**Files:**
-- `backend/firestore.rules` — additive partner read access (owner-only stays the default)
-- `shared/spec/schema.md` — `partnerships/{pairId}`, `partner_invites/{inviteId}`
-- `mobile/services/firebase/partners.ts` — `sendInvite` / `acceptInvite` / `endPartnership`, `usePartner()`, the partner-visible session view
+- L28 / L29 / L30 locked (done 2026-06-01).
+- OTA coherence confirmed: `appVersion` + channel match the installed beta binary; rules deploy is additive; no native module added all week.
+- **M7.recruit starts Day 0** and runs daily in parallel with code.
+
+## Mohamed — W7 (backend + recruiting)
+
+### M7.0 🔴 Partner edge + invite-code install-and-pair + the two release-gate rules
+**Depends on:** M2.4, M4.2 · **Unblocks:** S7.0 · **Skill:** `floq-firestore`
+**Files:** `backend/firestore.rules`; `shared/spec/schema.md` (`partnerships/{pairId}`, invite codes, `users/{uid}/partner` singleton); `mobile/services/firebase/partners.ts`; emulator tests
 **Acceptance:**
-- `partnerships/{pairId}` (sorted-UID doc): `members[2]`, `status: pending | active | ended`, `created_at`. **One partner at a time.**
-- `partner_invites/{inviteId}`: sender → recipient (by email/username); recipient accept → creates the partnership
-- **Rules:** a partner may READ the other's completed-session **summaries** (minutes, score, when) + **scheduled** sessions — **NEVER task titles** (L4 privacy invariant holds); writes only to own docs; ending a partnership / deleting an account cleans up the edge
-- **Consent is explicit:** partner visibility (your schedule + scores) is **opt-in at pairing**, shown plainly, and revocable by ending the partnership — never automatic. (Sharing schedule/scores with a partner is a real step beyond the old owner-only model; task titles stay private regardless.)
-- no leaderboard, no n:n friend graph
-- `tsc` + tests green
+- `partnerships/{pairId}` (sorted-UID): `members[2]`, `status: pending|active|ended`, `created_at`. **One partner at a time** via a `users/{uid}/partner` singleton pointer.
+- `acceptInvite(code)` is a transaction that `get()`s both pointers + the invite and rejects if either party is paired; idempotent on sorted-UID `pairId`.
+- **RELEASE GATE A:** the partnership-CREATE rule's `get()` count is proven **under the Spark 10-`get()`/rule cap** by an emulator test (over-cap ⇒ every pair fails ⇒ the whole read is zero).
+- **RELEASE GATE B:** the sorted-UID `isPartner()` partner-read predicate has its own test (partner CAN read `social/summary`; non-partner / removed / blocked DENIED).
+- Code: 6-char / 32-symbol, ≤72h, collision-checked, revocable. A `floq://` link is best-effort pre-fill only (can't open an uninstalled app) — pairing is carried 100% by the typed code.
 
-### M7.1b 🔴 Paired streak + scheduled-session commitment surface
-**Owner:** Mohamed
-**Depends on:** M7.0, M4.4 (streak), M4.5/M4.6 (session lifecycle)
-**Unblocks:** S7.0
-**Skill:** `floq-storage` / `floq-firestore`
-**Spec references:** `decisions.md` L18; coupling designed **gentle** (L17 philosophy — `recovery_mod`-style soft pressure, no punitive streak resets across the pair)
-**Files:** `mobile/services/session/partnership.ts` (pair-streak + scheduled-session model) + storage + async mirror
+### M7.1 🔴 Presence primitive + title-stripped projections
+**Depends on:** M7.0, M3.1 · **Unblocks:** S7.1, S7.2 · **Skill:** `floq-firestore` / `floq-timer`
+**Files:** `mobile/services/firebase/presence.ts`; projection writers for `users/{uid}/social/summary` + `social/profile`; rules + tests
 **Acceptance:**
-- a user can **schedule** a session; the partner sees scheduled + completed (an **async** commitment surface — no live co-working; the async thesis holds)
-- **pair streak — gentle:** grace periods (travel/sick), and a partner's flake does **NOT** nuke your **individual** streak (L16/L17 spirit). Coupling strength is the **live variable to watch** at W8 (L17), not a locked choice.
-- session-end syncs the completion to the partnership
-- tests green
+- `presence/{uid}` holds ONLY coarse consented fields: `state: focusing|idle|just_finished`, `phase`, `started_at` (staleness), `ended_at` (`just_finished` decay), optional `score`/`minutes`. Owner write/delete only. `focusing` on start; `idle`/`just_finished` on end; **`idle` on sign-out**; crash/stale/decay bounded.
+- **`social/summary`** copies ONLY `{minutes, focus_score, ended_at, phase_at_end}` — provably OMITS `task.title` (verified leak: `session/distraction.ts:42`). Partner read is an EXACT-path rule; a test asserts DENY on `sessions/{id}`, `tasks/**`, raw `users/{uid}`.
+- **`social/profile`** name projection: written on **pair-accept + on `updateDisplayName` edit** (NOT finalize — `userProfile.ts:64` edits the source any time), length-capped + control-char-stripped + a phone/URL/slur content check.
 
----
-
-## Mustafa — W7
-
-### S7.0 🔴 Partnership UI + the activation funnel — THE make-or-break
-**Owner:** Mustafa (UX lead — the funnel is the highest-leverage surface in the whole pivot)
-**Depends on:** M7.0, M7.1b
-**Skill:** none (RN / Expo Router)
-**Spec references:** `decisions.md` L18; `@shared/spec/session-flow.md` (partnership flow)
-**Files:** onboarding partner step; invite / pending UX; partner views (their scheduled + completed); pair-streak display
+### M7.2 🔴 Reactions + analytics_events instrumentation
+**Depends on:** M7.1 · **Skill:** `floq-firestore`
 **Acceptance:**
-- onboarding offers "focus with someone?" — invite a partner **OR a clearly-available skip**. Solo is **never blocked** (mandatory pairing is the activation cliff — forbidden)
-- a partnerless / invite-pending user has a **fully good solo experience** while waiting (the on-ramp)
-- time-to-first-partner is minimized; invite-pending **and** accepted states both handled gracefully
-- partner's scheduled + completed sessions visible; pair streak shown; **no task titles** ever shown
-- both themes
+- One-tap reaction (fire/clap) on a partner's summary; in-app; rate-capped per direction; no-op on wiped/ended. Edge-cases enumerated: self-react disallowed, double-react idempotent, mutual react well-defined, pre-consent stranger react gated.
+- `analytics_events/{eventId}` append-only/create-only (modeled on `training_samples`, `firestore.rules:36`), OTA, no native SDK. `{uid, name, ts, seq, kind, props}`; `props` shape-validated — NO titles/free-text/display-name. **Deterministic `eventId`** so flush-on-reconnect overwrites, not double-writes. Every funnel step fires `logEvent`.
 
-### S7.1b 🟡 Pair insight (post-pairing ML surface) — optional Phase-A polish
-**Owner:** Both (M data, S UI)
-**Depends on:** M7.1b, M5.x (ML)
-**Spec references:** `decisions.md` L18 (L2/L4 invariants)
+### M7.3 🔴 Wipe / account-delete completeness + cross-tree unpair grant (NEVER-CUT)
+**Depends on:** M7.0–M7.2 · **Skill:** `floq-storage` / `floq-firestore`
 **Acceptance:**
-- surfaces overlapping good windows / shared patterns ("you both run strong Wednesday mornings")
-- per-user models stay **on-device** (L2 intact); only **coarse derived features** are shared — with the **known partner**, not a server (that's Phase B). No raw behavioral data leaves the device.
+- Wipe + delete enumerate and remove EVERY W7 egress: `social/summary`, name projection, sentiment, report, `presence/{uid}`, `users/{uid}/partner`, the want-a-partner intent. (`wipeRemoteUserData` deletes only `sessions`+`tasks` via a subcollection-typed deleter — ship a **parallel single-doc deleter**.)
+- The **L30** member-only cross-tree grant flips the co-owned `partnerships` to `ended` + nulls the counterpart pointer — that transition only; non-member denied. Tested. A wiped user is unreadable by their ex-partner across ALL surfaces incl. the name.
 
-> **Phase B (stranger-matching marketplace) is OUT OF SCOPE here** — conditional on the W8 market read (L18), post-MVP, and it would require amending L2/L4 + likely capital. Do not build it in the MVP.
+### M7.4 🟡 Broadcast-card claim supply (the one k>1 probe)
+**Depends on:** M7.0, S6.0 · **Skill:** `floq-firestore`
+**Acceptance:** the shared card carries a claimable code → a claim lands a COARSE-only consented edge. **Multi-claim** (group chats work) with a hard **per-code outstanding-edge cap** (e.g. ≤5) + short TTL enforced at claim-time; issuer notified (spam-capped, outside the transaction) + bulk-revocable. `claimed_via_broadcast` tagged.
+
+### M7.recruit 🔴 Recruit-first list + funnel tally (from Day 0)
+**Depends on:** none — starts Day 0
+**Acceptance:** a named recruit list M owns; recruiting runs daily; a four-column tally **asked / said-yes / code-sent / installed-and-paired** kept daily (separates "loop broken" from "not enough asks"). Target ~10–16 pairs for loop-readability; below it → **beta slips a week, recruiting continues** (never auto-fires L18).
+
+### M7.notif 🟡 Generalize the cancel-on-entry helper
+**Acceptance:** generalize the existing `cancelBreakReminder` helper to also sweep `session-start` (reuse `breakScheduleInFlight`/`cancelByKind`); reschedule-on-end threaded; both branches tested. **Not** at `focus.tsx` (its start sites already cancel symmetrically — verified). S adds the call at the two existing sites.
+
+### Scaffold dark (M, only if buffer remains)
+- **Room** — `rooms/{roomId}/members` schema behind `FLAG_ROOM_LIVE=false`, no UI (the want-a-partner intent is its first future seed; user-created/visibility rooms are post-MVP per decisions.md).
+- **Pair streak** — schema field behind `FLAG_PAIR_STREAK_LIVE=false`, no visible streak (coupling lock-in stays off).
+
+## Mustafa — W7 (all UI)
+
+### S7.0 🔴 Invite / install-and-pair flow + all claim states
+**Depends on:** M7.0 · **Skill:** none
+**Acceptance:**
+- Invite card carries the 6-char code (printed + link pre-fill). Cold install → onboarding → auth → single "Have an invite code?" field → `acceptInvite` → lands `active` immediately.
+- States handled: already-paired, simultaneous (idempotent), expired, self-pair, revoked, re-pair after `ended`, blocked, **partner-dormant** ("{name} joined — hasn't focused yet" + resend, non-blaming), dead issuer, **offline at the install→pair seam** (explicit Retry, code persisted).
+- No-friend "**Skip — focus solo**" → calm solo; a non-inert "I want a partner" intent toggle in the Partner tab. Solo NEVER blocked.
+
+### S7.1 🔴 Partner view + reaction
+**Depends on:** M7.1, M7.2 · **Acceptance:** partner's live presence + completed summaries (minutes/score/when — never titles); one-tap reaction anchored to the original session context; both themes.
+
+### S7.2 🔴 Beat-1 presence surface + the single pairing consent
+**Depends on:** M7.1 · **Acceptance:**
+- "[partner] is in a focus session right now → start one too?" — renders ONLY when fresh-live-focusing, silent otherwise, never mid-session, framed as the recipient's OWN prompt.
+- **ONE** pairing-consent at connection: "Share your focus activity with [partner]?" (summaries + presence), default-OFF, one tap, symmetric, toggleable. OS notification permission requested separately at second session-end / first reaction.
+
+### S7.3 🔴 In-app finish card + mute / remove / block / report
+**Depends on:** M7.1–M7.3 · **Acceptance:**
+- "What your partner did" card on next Home open (in-app; no remote push this week).
+- Reversible **mute** (silent, tears down the listener); **REMOVE** (neutral, one-tap) vs **BLOCK** (indistinguishable, confirm) — both revoke the presence read via the rule; one-tap **Report** on any partner/claimer surface (App-Store 1.2 abuse path).
+
+### S7.4 🟡 Onboarding partner step
+**Depends on:** S7.0 · **Acceptance:** onboarding offers "focus with someone?" → invite OR a clearly-available skip; invite-pending and accepted both handled; time-to-first-partner minimized.
+
+## W8 read (set up in W7)
+
+- **Axis A (the deliverable):** invite→install→pair convert · start-together · reaction · broadcast-claim rates. Need ~10–16 pairs.
+- **Axis B (causal retention):** DEFERRED to W9 (per L29).
+- **Decision rule:** below threshold → slip + re-recruit; do NOT launder into pass/kill/"build the Room."
+
+## Deliberately NOT in W7 (and why)
+
+Remote push (local + in-app; timely-reaction push is W9) · scheduled sessions (kills the moat; supersedes M7.1b) · the finish digest · any analytics SDK (breaks OTA) · a randomized control arm (impossible at this n) · a live Room (ghost town at this n) · a visible pair streak (coupling lock-in) · the co-session graph writer (zero W8 value, re-identifies at small n).
 
 ---
 
