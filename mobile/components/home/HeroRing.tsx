@@ -58,13 +58,21 @@ function HeroRingBase({ focusMinutes, breakMinutes }: Props) {
           {/* Invisible spacer label above the number balances the real one
               below, so the NUMBER (not the number+label group) sits dead-center
               in the ring. */}
-          <Text variant="tiny" style={[styles.unit, styles.unitGhost]} accessibilityElementsHidden>
+          {/* S6.3 Dynamic Type: the ring is a fixed-size SVG, so the centered
+              number + units are capped so large text can't overflow it (matched
+              multipliers keep the ghost/real spacers balanced). */}
+          <Text
+            variant="tiny"
+            style={[styles.unit, styles.unitGhost]}
+            accessibilityElementsHidden
+            maxFontSizeMultiplier={1.3}
+          >
             MIN FOCUS
           </Text>
-          <Text variant="display" style={styles.num}>
+          <Text variant="display" style={styles.num} maxFontSizeMultiplier={1.3}>
             {focusMinutes}
           </Text>
-          <Text variant="tiny" color={theme.textMuted} style={styles.unit}>
+          <Text variant="tiny" color={theme.textMuted} style={styles.unit} maxFontSizeMultiplier={1.3}>
             MIN FOCUS
           </Text>
         </View>

@@ -29,6 +29,16 @@ export const lightTheme = {
     flow: '#0F8B8D', // brand teal — the reward
     recovery: '#7BA591', // desaturated sage — soft, parasympathetic
   },
+  // S6.3 a11y: the PhaseIndicator's 11px pill LABEL renders in these, while the
+  // dot keeps the vivid `phase` color (identity preserved). The raw `phase`
+  // tints fail WCAG AA as small text on their own 12%-alpha pill bg (recovery
+  // was 2.39:1); these are the same hue darkened to ≥4.5:1. See design-system.md.
+  phaseInk: {
+    struggle: '#8e5d44',
+    release: '#5d6a79',
+    flow: '#0d7476',
+    recovery: '#4d7260',
+  },
 };
 
 export type Theme = typeof lightTheme;
@@ -52,5 +62,14 @@ export const darkTheme: Theme = {
     release: '#8B9AAB', // lifted cool slate
     flow: '#0F8B8D', // brand teal — same hue, same identity
     recovery: '#9CBEAB', // lifted sage
+  },
+  // S6.3 a11y (see lightTheme): on dark the lifted phase tints mostly clear AA
+  // as pill-label text already; only `flow` (4.16:1) needed a hair more, so it's
+  // lifted slightly. The dot still uses the vivid `phase` value.
+  phaseInk: {
+    struggle: '#C28466',
+    release: '#8B9AAB',
+    flow: '#109496',
+    recovery: '#9CBEAB',
   },
 };

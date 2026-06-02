@@ -71,7 +71,9 @@ export function DistractionButton() {
 
 const styles = StyleSheet.create({
   button: {
-    height: 56,
+    minHeight: 56, // S6.3: grows (not clips) at the largest Dynamic Type sizes
+    paddingVertical: 8,
+    paddingHorizontal: 16,
     borderRadius: 8,
     borderWidth: 1,
     alignItems: 'center',

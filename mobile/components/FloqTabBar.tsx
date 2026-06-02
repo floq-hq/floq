@@ -172,7 +172,9 @@ export function FloqTabBar({ active, onChange }: Props) {
               hitSlop={6}
             >
               <tab.Icon color={color} />
-              <Text style={[styles.label, { color }]}>{tab.label}</Text>
+              <Text style={[styles.label, { color }]} numberOfLines={1} maxFontSizeMultiplier={1.2}>
+                {tab.label}
+              </Text>
             </Pressable>
           );
         })}

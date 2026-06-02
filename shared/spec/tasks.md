@@ -794,16 +794,15 @@ Goal by end of week: forecast graph is rendered, warming regime behaves correctl
 - Un-clamped scores honest: zero baseline shows when crossing 0; negative projection turns the line + anchor `danger`
 - Empty / cold state hidden behind the regime gate (cold = badge + **positive** unlock countdown; gated-in-but-no-shape = neutral placeholder, never a negative countdown)
 
-### S6.2 🔴 Animations + haptics pass — ✅ done 2026-06-02
+### S6.2 🔴 Animations + haptics pass
 **Depends on:** all prior screens
 **Skill:** none
 **Acceptance:**
-- Phase indicator color transition smooth (800ms easeInOut per spec) — ✅ already in `PhaseIndicator.tsx` (withTiming 800ms `Easing.inOut`, cancel-in-flight guard)
-- Distraction button has medium-impact haptic — ✅ now via the shared `services/haptics.impactMedium()`
-- Done button has success haptic — ✅ added `notifySuccess()` in `app/focus.tsx onDone` (fires only on a completed session)
-- Tab switches animate cleanly — ✅ already in `FloqTabBar` (animated indicator slide, `indicatorTranslateX`)
-- Onboarding screen transitions feel calm (no spring bounces) — ✅ already `animation: 'fade'` in `app/(auth)/_layout.tsx`
-**Done:** the only genuine gap was the DONE success haptic; the rest landed in S3.x. New `services/haptics.ts` (guarded `impactMedium`/`notifySuccess`) centralizes the native-module guard. All pure JS (expo-haptics/reanimated already installed) → OTA-safe. Haptics only fire on a real device (no Taptic Engine on the simulator).
+- Phase indicator color transition smooth (800ms easeInOut per spec)
+- Distraction button has medium-impact haptic
+- Done button has success haptic
+- Tab switches animate cleanly
+- Onboarding screen transitions feel calm (no spring bounces)
 
 ### S6.3 🟡 Accessibility pass
 **Depends on:** all prior screens

@@ -239,7 +239,8 @@ Per `mobile/CLAUDE.md`. Plain StyleSheet + the `useTheme()` hook. No further sty
 The phase pill on the session screen is the single most distinctive piece of UI in Floq. It deserves its own constraints.
 
 - Always full-pill rounded (`borderRadius: 9999`).
-- Background: the active phase color at 12% alpha. Text: the active phase color at full opacity.
+- Background: the active phase color at 12% alpha. Dot: the active phase color at full opacity (the identity marker).
+- **Label text uses `phaseInk` (S6.3 a11y), NOT the raw phase color.** At `tiny` (11px) the full-opacity phase color fails WCAG AA on its own 12% pill bg (light `recovery` was 2.39:1). `phaseInk` is the same hue darkened (light) / lifted (dark `flow` only) to ≥4.5:1; the **dot keeps the vivid `phase` color** so the distinctive look is preserved. See `theme/tokens.ts` `phaseInk`.
 - Text: `tiny` size (11), weight 500, **uppercase**, letter-spacing +0.5.
 - Animates color shifts over 800ms with `easeInOut` when the phase changes. No flashing, no bouncing.
 - Position: top of the session screen, horizontally centered.
