@@ -24,7 +24,7 @@ export interface UserProfile {
   email: string;
   displayName: string;
   createdAt: number | null;
-  privacy: 'private' | 'friends';
+  privacy: 'private' | 'partner';
 }
 
 /** Firestore stores epoch via serverTimestamp() → a Timestamp with toMillis().
@@ -49,7 +49,7 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
     email: typeof d.email === 'string' ? d.email : '',
     displayName: typeof d.display_name === 'string' ? d.display_name : '',
     createdAt: toMillis(d.created_at),
-    privacy: d.privacy === 'friends' ? 'friends' : 'private',
+    privacy: d.privacy === 'partner' ? 'partner' : 'private',
   };
 }
 

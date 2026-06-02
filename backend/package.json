@@ -1,0 +1,16 @@
+{
+  "name": "floq-backend-rules-tests",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Firestore security-rules emulator tests (the M7.0 release gate). Run from this dir; needs Java + the Firebase CLI.",
+  "scripts": {
+    "test:rules": "firebase emulators:exec --only firestore --project floq-rules-test \"vitest run\"",
+    "test:rules:watch": "firebase emulators:exec --only firestore --project floq-rules-test \"vitest\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.1",
+    "firebase": "^12.13.0",
+    "firebase-tools": "^13.29.1",
+    "vitest": "^3.2.4"
+  }
+}

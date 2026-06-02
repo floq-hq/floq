@@ -41,7 +41,7 @@ export async function ensureUserDoc(
       ...(seed.apple_id ? { apple_id: seed.apple_id } : {}),
       created_at: serverTimestamp(),
       has_seen_intro: false, // first-session framing card (S2.5) not yet shown
-      privacy: 'private', // default per floq-firestore skill; opt into 'friends' later
+      privacy: 'private', // default per floq-firestore skill; opt into 'partner' later
     },
     { merge: true },
   );

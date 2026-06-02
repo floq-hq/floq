@@ -2,37 +2,190 @@ rules_version = '2';
 
 // Floq Firestore security rules.
 //
-// M1.4 — INITIAL LOCKDOWN. Deny all client access. The real per-collection
-// rules (owner-only on users/{uid}, friends-readable social docs, etc.) are
-// opened deliberately as each feature lands:
-//   - owner-only read/write on users/{uid} + subcollections  -> M2.2
-//   - friendships / friend_requests / friends-readable social -> M7.1
+// Opened deliberately as each feature lands:
+//   - owner-only read/write on users/{uid} + subcollections      -> M2.2
+//   - create-only anonymized training samples                    -> L23
+//   - partnership edge + invite-code install-and-pair + partner
+//     read of social/summary + the two cross-tree grants (L30)   -> M7.0
 //
-// SAFETY (per CLAUDE.md): changes here must be backward-compatible and
-// reviewed. LOOSENING any rule (making something readable/writable that wasn't)
-// requires explicit sign-off. Follow the access principles in the
-// `floq-firestore` skill when opening these up.
+// SAFETY (per CLAUDE.md): changes here must be backward-compatible and reviewed.
+// LOOSENING any rule requires explicit sign-off. M7.0 adds two deliberate,
+// scoped loosenings (signed off in the plan): an active partner may READ the
+// owner's social/summary projection (NEVER sessions/tasks/raw user doc — L4
+// holds), and a user may write OUTSIDE their own tree in exactly two cases — the
+// pairing grant (create the counterpart's partner pointer on accept) and the
+// L30 unpair grant (delete the pointer that names them). Both are emulator-tested.
+//
+// Every new match below is ADDITIVE: Firestore OR's across matching paths, so
+// these grants cannot loosen the owner-only grant or the catch-all deny.
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Sorted-UID pair id (matches partners.ts pairIdOf + the doc id convention).
+    function pairIdOf(a, b) {
+      return a < b ? a + '_' + b : b + '_' + a;
+    }
+
+    // RELEASE GATE B predicate: the reader has an ACTIVE partnership with ownerUid.
+    // One distinct document access (partnerships/{sortedPair}); exists()+get() to
+    // the same path dedupe in the rules engine.
+    function isPartner(ownerUid) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/partnerships/$(pairIdOf(request.auth.uid, ownerUid)))
+        && get(/databases/$(database)/documents/partnerships/$(pairIdOf(request.auth.uid, ownerUid))).data.status == 'active'
+        && request.auth.uid in get(/databases/$(database)/documents/partnerships/$(pairIdOf(request.auth.uid, ownerUid))).data.members;
+    }
+
     // M2.2 — owner-only on the user document and all owned subcollections.
-    // A user reads/writes only their own users/{uid} tree; nobody else can.
-    // TODO(M7.1): add a friends-readable exception for the social profile doc.
     match /users/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read, write: if isSignedIn() && request.auth.uid == uid;
 
       match /{document=**} {
-        allow read, write: if request.auth != null && request.auth.uid == uid;
+        allow read, write: if isSignedIn() && request.auth.uid == uid;
       }
     }
 
-    // L23 — anonymized ML training samples. Top-level + unlinked to any account
-    // on purpose (anonymous, not personal data). CREATE-ONLY for authenticated
-    // clients with strict shape validation (only the allowed keys; features a
-    // 13-length list; regime constrained); NO read/update/delete from any client
-    // (retraining reads offline via the Admin SDK). Additive — previously denied
-    // by the catch-all below. The shape check enforces the L4 invariant at the
-    // boundary: no uid / task title / free text can be written here.
+    // M7.0 — RELEASE GATE B. An active partner may READ the owner's session
+    // summary projection (the title-stripped social/summary; writer lands M7.1).
+    // ADDITIVE to the owner's recursive grant above. Writes stay owner-only (no
+    // write clause here -> falls through to the recursive owner grant). The
+    // partner has NO read match for sessions/{id}, tasks/**, the raw users/{uid}
+    // doc, or the partner pointer, so all of those stay DENIED (L4 holds).
+    match /users/{ownerUid}/social/summary {
+      allow read: if isSignedIn() && (request.auth.uid == ownerUid || isPartner(ownerUid));
+    }
+
+    // M7.0 — the singleton partner pointer. The owner's own read/write/delete
+    // rides the recursive users/{uid} grant above; this exact-path match ADDS
+    // the two cross-tree cases (the only writes a user makes outside their tree).
+    match /users/{ownerUid}/partner/current {
+
+      // CROSS-TREE PAIRING GRANT — the accepter creates the counterpart's
+      // pointer as part of acceptInvite. Gated on a valid, unexpired, pending
+      // invite FROM ownerUid (the committed proof that ownerUid consented to
+      // pair). Create-only => the target pointer must have been empty.
+      // get budget: 1 distinct document (the invite).
+      allow create: if isSignedIn()
+        && request.auth.uid != ownerUid
+        && request.resource.data.partner_uid == request.auth.uid
+        && request.resource.data.pair_id == pairIdOf(request.auth.uid, ownerUid)
+        && request.resource.data.since == request.time
+        && request.resource.data.invite_code is string
+        && request.resource.data.keys().hasOnly(['pair_id', 'partner_uid', 'since', 'invite_code'])
+        && exists(/databases/$(database)/documents/partner_invites/$(request.resource.data.invite_code))
+        && get(/databases/$(database)/documents/partner_invites/$(request.resource.data.invite_code)).data.from_uid == ownerUid
+        && get(/databases/$(database)/documents/partner_invites/$(request.resource.data.invite_code)).data.status == 'pending'
+        && request.time < get(/databases/$(database)/documents/partner_invites/$(request.resource.data.invite_code)).data.expires_at;
+
+      // CROSS-TREE UNPAIR GRANT (L30) — a member ends the partnership by tearing
+      // down the pointer that names THEM as the partner. get budget: 0.
+      allow delete: if isSignedIn() && resource.data.partner_uid == request.auth.uid;
+    }
+
+    // M7.0 — partner invites. inviteId === the normalized 6-char code, so the
+    // code is the secret that addresses the invite (get-by-id only; no list, so
+    // codes can't be enumerated). get()/exists() budget: 0 (keys off resource).
+    match /partner_invites/{inviteId} {
+      allow get: if isSignedIn();
+      allow list: if false;
+
+      allow create: if isSignedIn()
+        && request.resource.data.from_uid == request.auth.uid
+        && request.resource.data.code == inviteId
+        && request.resource.data.status == 'pending'
+        && request.resource.data.keys().hasOnly(['code', 'from_uid', 'status', 'created_at', 'expires_at'])
+        && request.resource.data.created_at == request.time
+        && request.resource.data.expires_at is timestamp
+        && request.resource.data.expires_at > request.time
+        && request.resource.data.expires_at < request.time + duration.value(73, 'h'); // ≤72h + clock-skew slack
+
+      // Two transitions off a still-pending invite, immutables frozen:
+      //  (i)  issuer revokes/expires;  (ii) accepter marks accepted, stamping self.
+      allow update: if isSignedIn()
+        && resource.data.status == 'pending'
+        && request.resource.data.from_uid == resource.data.from_uid
+        && request.resource.data.code == resource.data.code
+        && request.resource.data.created_at == resource.data.created_at
+        && request.resource.data.expires_at == resource.data.expires_at
+        && (
+          ( request.auth.uid == resource.data.from_uid
+            && request.resource.data.status in ['revoked', 'expired']
+            && request.resource.data.keys().hasOnly(['code', 'from_uid', 'status', 'created_at', 'expires_at'])
+          )
+          ||
+          ( request.auth.uid != resource.data.from_uid
+            && request.time < resource.data.expires_at
+            && request.resource.data.status == 'accepted'
+            && request.resource.data.accepted_by == request.auth.uid
+            && request.resource.data.keys().hasOnly(['code', 'from_uid', 'status', 'accepted_by', 'created_at', 'expires_at'])
+          )
+        );
+
+      allow delete: if false; // invites are revoked (status), never hard-deleted
+    }
+
+    // M7.0 — the partnership edge. pairId == sorted(members).join('_').
+    match /partnerships/{pairId} {
+
+      // RELEASE GATE A — the partnership-CREATE rule. Proven UNDER the Spark
+      // 10-get()/rule cap: 3 distinct document accesses (the invite + both
+      // members' partner pointers); the multiple get()s of the invite path
+      // dedupe to one. Over-cap would make EVERY acceptInvite fail and zero the
+      // Axis-A read, so the emulator A1 success is the literal proof.
+      allow create: if isSignedIn()
+        && request.resource.data.members is list
+        && request.resource.data.members.size() == 2
+        && request.resource.data.members[0] < request.resource.data.members[1]
+        && pairId == request.resource.data.members[0] + '_' + request.resource.data.members[1]
+        && request.auth.uid in request.resource.data.members
+        && request.resource.data.status == 'active'
+        && request.resource.data.created_at == request.time
+        && request.resource.data.pair_streak_days == 0
+        && request.resource.data.invite_code is string
+        && request.resource.data.keys().hasOnly(['members', 'status', 'created_at', 'pair_streak_days', 'invite_code'])
+        // a committed, pending, unexpired invite FROM the other member:
+        && exists(/databases/$(database)/documents/partner_invites/$(request.resource.data.invite_code))
+        && get(/databases/$(database)/documents/partner_invites/$(request.resource.data.invite_code)).data.from_uid
+             == (request.auth.uid == request.resource.data.members[0]
+                  ? request.resource.data.members[1]
+                  : request.resource.data.members[0])
+        && get(/databases/$(database)/documents/partner_invites/$(request.resource.data.invite_code)).data.status == 'pending'
+        && request.time < get(/databases/$(database)/documents/partner_invites/$(request.resource.data.invite_code)).data.expires_at
+        // neither member already paired (the singleton-pointer invariant):
+        && !exists(/databases/$(database)/documents/users/$(request.resource.data.members[0])/partner/current)
+        && !exists(/databases/$(database)/documents/users/$(request.resource.data.members[1])/partner/current);
+
+      allow get, list: if isSignedIn() && request.auth.uid in resource.data.members;
+
+      // Members-only updates: either a streak update (status frozen) OR the L30
+      // end transition (active -> ended, optional self-block). members /
+      // created_at / invite_code are immutable; ended is terminal (no un-end).
+      allow update: if isSignedIn()
+        && request.auth.uid in resource.data.members
+        && request.resource.data.members == resource.data.members
+        && request.resource.data.created_at == resource.data.created_at
+        && request.resource.data.invite_code == resource.data.invite_code
+        && (
+          ( request.resource.data.status == resource.data.status
+            && request.resource.data.keys().hasOnly(['members', 'status', 'created_at', 'pair_streak_days', 'invite_code'])
+          )
+          ||
+          ( resource.data.status == 'active'
+            && request.resource.data.status == 'ended'
+            && request.resource.data.keys().hasOnly(['members', 'status', 'created_at', 'pair_streak_days', 'invite_code', 'blocked_by', 'ended_at'])
+            && (!('blocked_by' in request.resource.data) || request.resource.data.blocked_by == request.auth.uid)
+          )
+        );
+
+      allow delete: if false; // partnerships are ended (status), never hard-deleted
+    }
+
+    // L23 — anonymized ML training samples. Create-only, strict shape (no uid /
+    // task title / free text — the L4 invariant at the boundary).
     match /training_samples/{sampleId} {
       allow create: if request.auth != null
         && request.resource.data.keys().hasOnly([

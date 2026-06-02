@@ -65,6 +65,21 @@ describe('getUserProfile', () => {
     expect(p?.privacy).toBe('private');
   });
 
+  it('preserves a "partner" privacy value (M7.0 rename) and coerces legacy "friends" to private', async () => {
+    getDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ email: 'a@b.com', display_name: 'Ada', created_at: 1, privacy: 'partner' }),
+    });
+    expect((await getUserProfile('u3'))?.privacy).toBe('partner');
+
+    // A pre-M7.0 'friends' value is no longer a valid literal → coerces to private.
+    getDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ email: 'a@b.com', display_name: 'Ada', created_at: 1, privacy: 'friends' }),
+    });
+    expect((await getUserProfile('u4'))?.privacy).toBe('private');
+  });
+
   it('returns null pending createdAt when the timestamp has not resolved', async () => {
     getDoc.mockResolvedValue({
       exists: () => true,
