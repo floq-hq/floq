@@ -794,25 +794,23 @@ Goal by end of week: forecast graph is rendered, warming regime behaves correctl
 - Un-clamped scores honest: zero baseline shows when crossing 0; negative projection turns the line + anchor `danger`
 - Empty / cold state hidden behind the regime gate (cold = badge + **positive** unlock countdown; gated-in-but-no-shape = neutral placeholder, never a negative countdown)
 
-### S6.2 🔴 Animations + haptics pass — ✅ done 2026-06-02
+### S6.2 🔴 Animations + haptics pass
 **Depends on:** all prior screens
 **Skill:** none
 **Acceptance:**
-- Phase indicator color transition smooth (800ms easeInOut per spec) — ✅ already in `PhaseIndicator.tsx` (withTiming 800ms `Easing.inOut`, cancel-in-flight guard)
-- Distraction button has medium-impact haptic — ✅ now via the shared `services/haptics.impactMedium()`
-- Done button has success haptic — ✅ added `notifySuccess()` in `app/focus.tsx onDone` (fires only on a completed session)
-- Tab switches animate cleanly — ✅ already in `FloqTabBar` (animated indicator slide, `indicatorTranslateX`)
-- Onboarding screen transitions feel calm (no spring bounces) — ✅ already `animation: 'fade'` in `app/(auth)/_layout.tsx`
-**Done:** the only genuine gap was the DONE success haptic; the rest landed in S3.x. New `services/haptics.ts` (guarded `impactMedium`/`notifySuccess`) centralizes the native-module guard. All pure JS (expo-haptics/reanimated already installed) → OTA-safe. Haptics only fire on a real device (no Taptic Engine on the simulator).
+- Phase indicator color transition smooth (800ms easeInOut per spec)
+- Distraction button has medium-impact haptic
+- Done button has success haptic
+- Tab switches animate cleanly
+- Onboarding screen transitions feel calm (no spring bounces)
 
-### S6.3 🟡 Accessibility pass — ✅ done 2026-06-02
+### S6.3 🟡 Accessibility pass
 **Depends on:** all prior screens
 **Skill:** none
 **Acceptance:**
-- VoiceOver tested: all interactive elements have accessible labels — ✅ codebase already broadly labeled (TextField/Button/tab bar carry role+label, animated timers hidden); fixed the one gap (`SessionCardModal` backdrop `role="button"`+`"Dismiss"`, inner tap-absorber `accessible={false}`)
-- Dynamic Type tested: app doesn't break at the largest text size — ✅ verified at AX-XXXL; capped the hero numbers (`HeroScore`, `HeroRing`) + tab labels, buttons grow (`minHeight`) and wrap. Residual at the absolute-max size is prose under pinned CTAs / mid-word card-title wrapping — accepted graceful degradation (all controls reachable)
-- Contrast verified on both themes — ✅ computed WCAG ratios from `tokens.ts`. textMuted/success/danger pass. Phase-pill **label** now uses new `phaseInk` tokens (≥4.5:1; light recovery 2.39→4.68) while the dot keeps the vivid phase color; `accent`-as-small-text marginal cases (3.95–4.12, brand-frozen) documented as accepted
-**Done:** added `phaseInk` token group + `design-system.md` a11y note. All pure JS → OTA-safe.
+- VoiceOver tested: all interactive elements have accessible labels
+- Dynamic Type tested: app doesn't break at the largest text size
+- Contrast verified on both themes (use the macOS Color Picker or a contrast plugin)
 
 ---
 
