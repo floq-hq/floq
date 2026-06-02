@@ -14,10 +14,11 @@ Legend: ✅ defined · 🧪 provisional (finalized by a later task) · ⏳ defer
 users/{uid}                        Single user document
 users/{uid}/sessions/{sessionId}   Subcollection — completed sessions (append-only)
 users/{uid}/tasks/{taskId}         Subcollection — current task queue (mirror of SQLite)
-users/{uid}/social                 Single doc — partner-visible profile summary (per L18)
+users/{uid}/social/summary         Doc — partner-visible session summary projection (writer: M7.1)
+users/{uid}/partner/current        Singleton pointer doc — the user's one active pairing (M7.0)
 
 partnerships/{pairId}              ✅ Phase A (M7.0, per L18) — the 1:1 focus-partner edge
-partner_invites/{inviteId}         ✅ Phase A (M7.0, per L18)
+partner_invites/{inviteId}         ✅ Phase A (M7.0, per L18) — inviteId === the 6-char code
 
 llm_cache/{hash}                   Shared LLM result cache (🧪 M2.3)
 
@@ -38,7 +39,7 @@ One doc per user, keyed by Firebase Auth UID. Created on first sign-up (M2.4).
 | `apple_id` | string | — | Set only for Apple Sign-In users |
 | `created_at` | Timestamp | ✅ | Server timestamp at sign-up |
 | `has_seen_intro` | boolean | ✅ | First-session framing card; default `false` |
-| `privacy` | `'friends' \| 'private'` | ✅ | **Default `'private'` on signup.** The `'friends'` literal is a legacy name (pre-L18); M7.0 renames it to `'partner'` (data + code), since under the partnership model the value gates partner-visibility, not a friend list. |
+| `privacy` | `'partner' \| 'private'` | ✅ | **Default `'private'` on signup.** Renamed from the legacy `'friends'` literal in M7.0 (data + code); under the partnership model the value names partner-visibility, not a friend list. NOTE: visibility is gated by the `partnerships` edge (the `isPartner()` rule), not by this field — it is descriptive, not load-bearing. |
 | `onboarding` | map | — | Set when onboarding completes (M1.5) |
 
 `onboarding` map:
@@ -120,21 +121,41 @@ Shared, derived cache of LLM task-parse results, keyed by an input hash (the has
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `members` | string[2] | ✅ | the two UIDs (sorted) |
-| `status` | `'pending' \| 'active' \| 'ended'` | ✅ | |
-| `created_at` | Timestamp | ✅ | |
-| `pair_streak_days` | number | ✅ | gentle design — grace periods; a partner's flake never nukes individual streaks (L16/L17) |
+| `members` | string[2] | ✅ | the two UIDs, **sorted ascending** (same order as `pairId`) |
+| `status` | `'pending' \| 'active' \| 'ended'` | ✅ | `acceptInvite` creates directly as `'active'` (lands paired immediately, S7.0). `'pending'` is reserved (unused in M7.0). `'ended'` set by REMOVE/BLOCK (L30). |
+| `created_at` | Timestamp | ✅ | `serverTimestamp()` |
+| `pair_streak_days` | number | ✅ | seed `0`. Gentle design — grace periods; a partner's flake never nukes individual streaks (L16/L17) |
+| `invite_code` | string | ✅ | **provenance** — the code that created the pair. Lets the partnership-CREATE rule self-address the already-committed invite without a query (rules can't see sibling writes in the same commit) |
+| `blocked_by` | string | — | set with `status:'ended'` on BLOCK; names the blocker (L30) |
+| `ended_at` | Timestamp | — | set on REMOVE/BLOCK |
 
-`partner_invites/{inviteId}` — pending invite, sender → recipient:
+`partner_invites/{inviteId}` — **`inviteId === the normalized 6-char code`** (typed-code install-and-pair; the recipient is unknown at invite time, so the code itself is the secret that *addresses* the invite — an O(1) `get`, never a query):
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `from_uid` | string | ✅ | sender |
-| `to_identifier` | string | ✅ | recipient email or username |
-| `status` | `'pending' \| 'accepted' \| 'declined'` | ✅ | accept → creates the partnership |
-| `created_at` | Timestamp | ✅ | |
+| `code` | string | ✅ | the normalized 6-char code; **equals the doc id** |
+| `from_uid` | string | ✅ | inviter (issuer) UID |
+| `status` | `'pending' \| 'accepted' \| 'revoked' \| 'expired'` | ✅ | created `'pending'`; accept → `'accepted'`; issuer revoke → `'revoked'` |
+| `accepted_by` | string | — | stamped with the accepter's UID on accept |
+| `created_at` | Timestamp | ✅ | `serverTimestamp()` |
+| `expires_at` | Timestamp | ✅ | absolute, `created_at + ≤72h` (a Timestamp, not a TTL, so rules can compare `request.time < expires_at`) |
 
-**Access (rules land in M7.0):** a partner may READ the other's completed-session **summaries** + **scheduled** sessions (minutes / score / when) — **NEVER task titles** (L4 invariant holds). Partner visibility is **opt-in at pairing**, shown plainly, and revoked by ending the partnership (M7.0 acceptance). Phase A stays on-device-friendly; only Phase B (stranger-matching, out of MVP scope, conditional on the W8 market read) would require sharing derived data server-side. Until M7.0, `backend/firestore.rules` stays owner-only.
+`users/{uid}/partner/current` — **singleton pointer doc**: this doc existing (or not) IS the "one partner at a time" invariant. Deleted on REMOVE/BLOCK.
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `pair_id` | string | ✅ | the `pairId` this user is bound to |
+| `partner_uid` | string | ✅ | the other member (denormalized so the partner tab reads the counterpart's `social/summary` without first reading the partnership) |
+| `since` | Timestamp | ✅ | `serverTimestamp()` |
+| `invite_code` | string | ✅ | provenance; addresses the invite for the cross-tree pairing-grant rule |
+
+**Access (rules in M7.0, `backend/firestore.rules`):**
+- `partner_invites/{code}`: `get` by code for any signed-in user (the code is the secret); no `list` (no enumeration); issuer creates/revokes; the accepter flips it to `accepted`.
+- `partnerships/{pairId}`: read/update by `members` only. **CREATE (release-gate A)** is a client transaction (Spark / no cloud function) gated on a valid committed invite from the counterpart + both members' pointers absent — proven **under the 10-`get()`/rule cap** by an emulator test. Members may flip `active → ended` (REMOVE/BLOCK, L30).
+- `users/{uid}/social/summary`: an **active partner** may READ it via the sorted-UID `isPartner()` predicate (release-gate B) — minutes / score / when, **NEVER task titles** (L4 holds); `sessions`, `tasks`, the raw user doc, and the partner pointer stay partner-DENIED. The summary **writer** lands in M7.1.
+- `users/{uid}/partner/current`: owner-writable; plus two narrow cross-tree grants — a **pairing** grant (the accepter creates the counterpart's pointer, gated on a valid invite) and the **L30 unpair** grant (a member deletes the pointer that names them, to end the partnership). These are the only writes a user makes outside their own tree.
+
+Phase A stays on-device-friendly; only Phase B (stranger-matching, out of MVP scope, conditional on the W8 market read) would require sharing derived data server-side.
 
 ## `training_samples/{autoId}` 🧪 (L23)
 

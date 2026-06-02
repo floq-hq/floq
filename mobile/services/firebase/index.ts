@@ -20,3 +20,16 @@ export {
 } from './auth';
 export { ensureUserDoc, type UserDocSeed } from './userDoc';
 export { resolveStartRoute, type StartRoute } from './routing';
+export {
+  createInvite,
+  revokeInvite,
+  acceptInvite,
+  removePartner,
+  blockPartner,
+  normalizeCode,
+  pairIdOf,
+  AcceptError,
+  INVITE_ALPHABET,
+  INVITE_CODE_LENGTH,
+  type AcceptReason,
+} from './partners';
