@@ -81,7 +81,16 @@ export const useTaskStore = create<TaskState>((set, get) => {
     hydrated: false,
 
     hydrate: async () => {
-      set({ tasks: loadTasks(), hydrated: true });
+      try {
+        set({ tasks: loadTasks(), hydrated: true });
+      } catch {
+        // A read fault (corrupt blob, getDb/migration throw, full disk) must not
+        // strand the queue: flipping `hydrated` keeps it stuck on a blank screen
+        // and every retry re-throws. Release the gate with an empty queue — the
+        // next successful write/sync repopulates it. (Mirrors useOnboardingStore,
+        // bug-audit-w5 #1/#6.)
+        set({ tasks: [], hydrated: true });
+      }
     },
 
     addTasks: (parsed) => commit(insertMany(get().tasks, parsed.map(buildTask))),

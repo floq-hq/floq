@@ -4,14 +4,14 @@
 > **Method:** multi-agent sweep (8 dimensions × 3 rounds, loop-until-dry), every
 > finding cross-checked by 2 independent adversarial verifiers. `2/2` = both
 > verifiers confirmed; `1/2` = one confirmed, one skeptical (lower confidence).
-> **Status:** in progress — **14/32 fixed**. The 2 🔴 HIGH (2026-05-29) + the entire **[MOHAMED]** backlog (2026-05-30, PRs #135/#136/#137: #13/#14/#15/#16/#17/#24/#26/#27/#28/#29/#30/#31). **Every remaining open item is [MUSTAFA] or [SHARED]** — no pure [MOHAMED] item is open. Remainder is Mustafa's frontend lane (+ 4 SHARED needing coordination).
+> **Status:** in progress — **18/32 fixed**. The 2 🔴 HIGH (2026-05-29) + the entire **[MOHAMED]** backlog (2026-05-30, PRs #135/#136/#137) + four [MUSTAFA] items reconciled 2026-06-02: **#4, #5, #7 were silently closed by Mohamed's W6 frontend PRs (#165/#170)** and **#6 fixed directly**. **Every remaining open item is [MUSTAFA] or [SHARED]** — no pure [MOHAMED] item is open.
 
 **Ownership legend**
 - **[MUSTAFA]** — frontend (`app/`, `components/`, stores, `services/{tasks,llm,share,onboarding,notifications}`, theme).
 - **[MOHAMED]** — `services/{timer,ml,session,storage}`, `firebase/auth`, `models/`, `services/stats/aggregations`. Hand off — Mustafa must not edit without Mohamed's approval.
 - **[SHARED]** — a Mustafa screen calling a Mohamed service; the two must coordinate.
 
-> 32 confirmed. **Update 2026-05-31:** both 🔴 + all [MOHAMED] items are fixed (14/32). The 18 open items are all **[MUSTAFA]** (frontend) or **[SHARED]**. Remaining priority for Mustafa: the silent-failure 🟠 items (#4 dead Session START, #5 share, #6 task-queue crash) first; the 4 [SHARED] items (#9–#12) need a quick Mohamed sync (they touch auth/session/notifications). Nothing in the audit now blocks W7 partnership work on the Mohamed side.
+> 32 confirmed. **Update 2026-06-02 (reconciled against the #135–180 sync):** 18/32 fixed. Several "open" [MUSTAFA] items were already closed by Mohamed's W6 frontend PRs — verified against current code: **#4 (#165), #5 (#170), #7 (#170)** done; **#6** fixed directly this pass. Re-verified STILL OPEN: **#3** (`SessionCardModal:56` still includes the current session in the baseline) and **#8** (1/2, `tasks/persist` read path still MMKV). Genuinely-open [MUSTAFA]: #3, #8 (both edge cases). The 4 [SHARED] items (#9–#12) need a quick Mohamed sync (auth/session/notifications). Nothing in the audit blocks W6 or W7.
 
 ---
 
@@ -32,25 +32,30 @@
 ## 🟠 MEDIUM
 
 ### [MUSTAFA]
-- [ ] **3. Share "% above average" includes the current session in its own average** — `components/session/SessionCardModal.tsx:41` (2/2)
+- [ ] **3. Share "% above average" includes the current session in its own average** — `components/session/SessionCardModal.tsx:56` (2/2)
   `focus.tsx` saves the session to SQLite *before* navigating to summary, so `meanScore(getFocusScoreSeries())` includes the just-finished score. Prior `[60]` + this `80` → should be 33% (per `sessionInsight.test.ts:22`), app shows 14%.
   **Fix:** exclude current session from the baseline (`getFocusScoreSeriesExcluding(id)`, or drop most-recent, or thread prior-average through).
+  **Re-verified 2026-06-02:** STILL OPEN — `SessionCardModal:56` still reads the full `getFocusScoreSeries()` baseline (line moved in the #170 redesign, bug unchanged).
 
-- [ ] **4. Session-tab START failures are silent** — `app/(tabs)/session.tsx:26` (2/2)
+- [x] **4. Session-tab START failures are silent** — `app/(tabs)/session.tsx:43` (2/2) ✅ fixed 2026-05-31 (#165)
   Destructures only `{onStart,launching,showIntro,onIntroDismiss}` — drops `launchError` that Home renders. Same regression PR4 #4 fixed, but on the Session tab (a primary START entry). Dead button, no feedback.
   **Fix:** destructure + render the `launchError` danger caption like `home.tsx`.
+  **Done:** the Home-redesign launchpad (`session.tsx:43`) now destructures `launchError` and renders it as a danger caption (`session.tsx:121`).
 
-- [ ] **5. Share failure is silent** — `components/session/SessionCardModal.tsx:45` (2/2)
+- [x] **5. Share failure is silent** — `components/session/SessionCardModal.tsx:65` (2/2) ✅ fixed 2026-05-31 (#170)
   `onShare` discards the `'shared'|'dismissed'|'failed'` result `shareSessionCard` deliberately returns. On capture failure the spinner just stops.
   **Fix:** `const r = await shareSessionCard(cardRef); if (r==='failed') { surface a toast/inline message }`.
+  **Done:** the share-card redesign surfaces the result — `if (result === 'failed') setError(true)` (`SessionCardModal:65`).
 
-- [ ] **6. Task queue hangs / blanks on any SQLite fault** — `stores/useTaskStore.ts:79` (2/2)
+- [x] **6. Task queue hangs / blanks on any SQLite fault** — `stores/useTaskStore.ts:83` (2/2) ✅ fixed 2026-06-02
   `hydrate()` has no try/catch; `loadTasks()` → `getDb()`/migrations can throw (corrupt DB, full disk) → `hydrated` never flips, queue stays `[]`, retries keep re-throwing. Same class as #1, different store.
   **Fix:** try/catch; set `hydrated:true` with empty/last-known queue; optionally fall back to the MMKV cache.
+  **Done:** wrapped `hydrate` in try/catch; on a read fault it releases the gate with an empty queue (`set({ tasks: [], hydrated: true })`) so the next successful write/sync repopulates — mirrors the #1 onboarding fix.
 
-- [ ] **7. Forecast caption can render "-13 more sessions"** — `components/stats/ForecastSection.tsx:70` (1/2)
+- [x] **7. Forecast caption can render "-13 more sessions"** — `components/stats/ForecastSection.tsx` (1/2) ✅ fixed 2026-05-31 (#170)
   Cold branch is `state==='cold' || shownForecast==null`. If the forecast query errors/loads-late while `count>=7`, it renders `MIN_SESSIONS_FOR_FORECAST - count` (negative).
   **Fix:** only show the unlock-countdown when `state==='cold'`; neutral placeholder when forecast null but count≥7. Clamp with `Math.max(0,…)`.
+  **Done:** the S6.1 rewrite added the 3-state `forecastSectionView` — the unlock countdown renders ONLY when truly cold (count 0–6, always positive); a gated-in-but-null shape gets a neutral placeholder.
 
 - [ ] **8. `loadTasks` reads MMKV not SQLite → can delete live tasks from the Firestore mirror** — `services/tasks/persist.ts:50` (1/2)
   Read path + mirror delete-diff baseline both come from the MMKV cache, written as a separate step after SQLite. A failed/partial cache write → stale baseline → `mirrorTasks` deletes still-live ids from `users/{uid}/tasks`.
