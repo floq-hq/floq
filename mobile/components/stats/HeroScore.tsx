@@ -34,7 +34,7 @@ export function HeroScore() {
           : `Weekly focus score ${display}, last 7 days`
       }
     >
-      <Text variant="display" style={styles.score} color={scoreColor}>
+      <Text variant="display" style={styles.score} color={scoreColor} maxFontSizeMultiplier={1.3}>
         {display}
       </Text>
       <Text variant="caption" color={theme.textMuted} style={styles.caption}>

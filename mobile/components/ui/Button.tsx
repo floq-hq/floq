@@ -34,9 +34,12 @@ export type ButtonProps = {
   style?: StyleProp<ViewStyle>;
 };
 
+// S6.3 Dynamic Type: minHeight (not height) so the button grows instead of
+// clipping the label at the largest text sizes; paddingVertical keeps the
+// label off the edges as it scales.
 const SIZE = {
-  lg: { height: 52, paddingHorizontal: 24, token: 'bodyMedium' as const },
-  md: { height: 44, paddingHorizontal: 16, token: 'label' as const },
+  lg: { minHeight: 52, paddingHorizontal: 24, paddingVertical: 8, token: 'bodyMedium' as const },
+  md: { minHeight: 44, paddingHorizontal: 16, paddingVertical: 6, token: 'label' as const },
 };
 
 /** Resolves bg / border / text color for a variant, accounting for pressed state. */
@@ -80,8 +83,12 @@ export function Button({
   const blocked = disabled || loading;
 
   const layout = useMemo<ViewStyle>(
-    () => ({ height: dims.height, paddingHorizontal: dims.paddingHorizontal }),
-    [dims.height, dims.paddingHorizontal],
+    () => ({
+      minHeight: dims.minHeight,
+      paddingHorizontal: dims.paddingHorizontal,
+      paddingVertical: dims.paddingVertical,
+    }),
+    [dims.minHeight, dims.paddingHorizontal, dims.paddingVertical],
   );
 
   return (
@@ -116,7 +123,8 @@ export function Button({
         variant={dims.token}
         color={colorsFor(theme, variant, false).textColor}
         style={loading ? styles.hiddenLabel : undefined}
-        numberOfLines={1}
+        numberOfLines={2}
+        maxFontSizeMultiplier={1.6}
       >
         {label}
       </Text>

@@ -69,10 +69,17 @@ export function SessionCardModal({
 
   return (
     <Modal visible={data != null} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={[styles.backdrop, { paddingBottom: insets.bottom + 16 }]} onPress={onClose}>
+      <Pressable
+        style={[styles.backdrop, { paddingBottom: insets.bottom + 16 }]}
+        onPress={onClose}
+        accessibilityRole="button"
+        accessibilityLabel="Dismiss"
+      >
         {/* One cohesive column, all children the card's width — Stop taps on the
-            content from closing the sheet. */}
-        <Pressable style={styles.content} onPress={() => {}}>
+            content from closing the sheet. `accessible={false}` so VoiceOver
+            doesn't announce this tap-absorber as a button (its children — the
+            toggle, card, and actions — stay individually accessible). */}
+        <Pressable style={styles.content} onPress={() => {}} accessible={false}>
           <SegmentedControl options={VARIANTS} value={which} onChange={setWhich} />
 
           {data && (
