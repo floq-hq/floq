@@ -48,6 +48,7 @@ import { EndEarlySheet } from '../components/session/EndEarlySheet';
 import { phaseFor, type Phase, type SessionPlan } from '../services/timer';
 import { saveCompletedSession } from '../services/storage/sessions';
 import { finalizeOnDone } from '../services/session/finalize';
+import { notifySuccess } from '../services/haptics';
 import { startBackgroundPolicy } from '../services/session/backgroundPolicy';
 import { backgroundDistractionMessage } from '../services/session/backgroundNotice';
 import { scheduleBreakReminder } from '../services/notifications';
@@ -220,6 +221,10 @@ export default function SessionScreen() {
       router.replace('/home');
       return;
     }
+
+    notifySuccess(); // S6.2: one celebratory success buzz on a completed session
+
+
 
     // One DONE timestamp, reused for both the session record and the recovery
     // countdown anchor (audit #29) so the on-screen countdown and the break
