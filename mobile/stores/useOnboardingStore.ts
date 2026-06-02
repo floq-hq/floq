@@ -12,11 +12,13 @@ import { create } from 'zustand';
 import {
   clearDraft,
   clearOnboarding,
+  healOnboardingMirror,
   loadDraft,
-  loadOnboarding,
+  loadOnboardingResolved,
   saveDraft,
   saveOnboarding,
   type OnboardingAnswers,
+  type OnboardingLoad,
 } from '../services/onboarding';
 
 interface OnboardingState {
@@ -26,12 +28,19 @@ interface OnboardingState {
   draft: Partial<OnboardingAnswers>;
   /** True once hydrate() has run (so the UI can avoid a flash before load). */
   hydrated: boolean;
+  /**
+   * True only when a RETURNING account's onboarding state couldn't be confirmed
+   * (Firestore unreachable, empty MMKV). The boot gate (app/index.tsx) routes
+   * such a user to Home rather than re-prompting Q1 — the mirror self-heals on a
+   * later boot. Never set for a brand-new account (those still reach onboarding).
+   */
+  onboardingUnresolved: boolean;
 
   setAnswer: <K extends keyof OnboardingAnswers>(
     key: K,
     value: OnboardingAnswers[K],
   ) => void;
-  hydrate: (uid?: string) => Promise<void>;
+  hydrate: (uid?: string, opts?: { isBrandNew?: boolean }) => Promise<void>;
   finalize: (uid?: string) => Promise<void>;
   reset: () => void;
 }
@@ -40,6 +49,7 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
   answers: null,
   draft: {},
   hydrated: false,
+  onboardingUnresolved: false,
 
   setAnswer: (key, value) =>
     set((s) => {
@@ -48,19 +58,37 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
       return { draft };
     }),
 
-  hydrate: async (uid) => {
+  hydrate: async (uid, opts) => {
+    let result: OnboardingLoad;
     try {
-      const answers = await loadOnboarding(uid);
-      // Restore the in-progress draft only when onboarding isn't finalized yet —
-      // a finalized user routes to Home and never re-enters the question flow.
-      set({ answers, draft: answers ? {} : loadDraft(), hydrated: true });
+      result = await loadOnboardingResolved(uid);
     } catch {
-      // Offline / Firestore unavailable on a fresh install (empty MMKV, so no
-      // local answers to fall back on): never strand the boot gate on the splash
-      // spinner. Treat as "not yet finalized", restore any local draft, and let
-      // app/index.tsx route into the onboarding flow.
-      set({ answers: null, draft: loadDraft(), hydrated: true });
+      // loadOnboardingResolved swallows its own I/O errors, but stay defensive.
+      result = { status: 'unknown' };
     }
+
+    if (result.status === 'found') {
+      // Restore nothing — a finalized user routes to Home and never re-enters the
+      // question flow. Repair a dropped server mirror in the background (never
+      // blocks the gate) so the next re-login reads `found` instead of re-prompting.
+      set({ answers: result.answers, draft: {}, hydrated: true, onboardingUnresolved: false });
+      void healOnboardingMirror(uid, result.answers);
+      return;
+    }
+
+    if (result.status === 'absent' || opts?.isBrandNew) {
+      // Server-CONFIRMED no onboarding, OR a brand-new account that couldn't reach
+      // the server (offline new install): into the onboarding flow, restoring any
+      // in-progress draft so a kill mid-flow resumes where it left off.
+      set({ answers: null, draft: loadDraft(), hydrated: true, onboardingUnresolved: false });
+      return;
+    }
+
+    // status === 'unknown' on a RETURNING account: the read failed and we must NOT
+    // mistake that for a new user. Release the gate (never strand the splash) but
+    // flag it unresolved so app/index.tsx routes to Home, not Q1. The mirror
+    // self-heals on the next successful boot.
+    set({ answers: null, draft: {}, hydrated: true, onboardingUnresolved: true });
   },
 
   finalize: async (uid) => {
@@ -87,6 +115,6 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
 
   reset: () => {
     clearOnboarding();
-    set({ answers: null, draft: {}, hydrated: false });
+    set({ answers: null, draft: {}, hydrated: false, onboardingUnresolved: false });
   },
 }));

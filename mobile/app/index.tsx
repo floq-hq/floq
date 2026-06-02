@@ -18,6 +18,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { Redirect } from 'expo-router';
 import { resolveStartRoute, useCurrentUser } from '../services/firebase';
 import { scheduleSessionStartReminder } from '../services/notifications';
+import { isBrandNewAccount } from '../services/onboarding';
 import { useOnboardingStore } from '../stores/useOnboardingStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useTaskStore } from '../stores/useTaskStore';
@@ -49,6 +50,7 @@ export default function Index() {
   const answers = useOnboardingStore((s) => s.answers);
   const draft = useOnboardingStore((s) => s.draft);
   const hydrated = useOnboardingStore((s) => s.hydrated);
+  const onboardingUnresolved = useOnboardingStore((s) => s.onboardingUnresolved);
   const hydrate = useOnboardingStore((s) => s.hydrate);
   const settingsHydrated = useSettingsStore((s) => s.hydrated);
   const hydrateSettings = useSettingsStore((s) => s.hydrate);
@@ -59,9 +61,11 @@ export default function Index() {
     getRestorableSession(),
   );
 
-  // Load the seed once we know who's signed in (gates onboarding vs home).
+  // Load the seed once we know who's signed in (gates onboarding vs home). Pass
+  // whether this is a brand-new account so an UNCONFIRMED read on a RETURNING
+  // user routes to Home instead of re-prompting onboarding (re-login bug fix).
   useEffect(() => {
-    if (user && !hydrated) void hydrate(user.uid);
+    if (user && !hydrated) void hydrate(user.uid, { isBrandNew: isBrandNewAccount(user.metadata) });
   }, [user, hydrated, hydrate]);
 
   // Load app settings once at launch so the background-during-session policy
@@ -122,7 +126,13 @@ export default function Index() {
     );
   }
 
-  const route = resolveStartRoute({ user, onboardingComplete: answers !== null });
+  // `onboardingUnresolved` (a returning user whose state we couldn't confirm)
+  // counts as complete so we route to Home, never back through Q1; the mirror
+  // self-heals on a later boot.
+  const route = resolveStartRoute({
+    user,
+    onboardingComplete: answers !== null || onboardingUnresolved,
+  });
   const href =
     route === 'auth'
       ? '/(auth)/welcome'
