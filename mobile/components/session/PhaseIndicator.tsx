@@ -51,6 +51,14 @@ export function PhaseIndicator({ phase }: { phase: Phase }) {
   // the worklets read them by closure.
   const fg = [theme.phase.struggle, theme.phase.release, theme.phase.flow, theme.phase.recovery];
   const bg = fg.map((c) => withAlpha(c, 0.12));
+  // S6.3 a11y: the dot keeps the vivid phase color (`fg`); the 11px LABEL uses
+  // the darker `phaseInk` so it clears WCAG AA on the 12%-alpha pill bg.
+  const ink = [
+    theme.phaseInk.struggle,
+    theme.phaseInk.release,
+    theme.phaseInk.flow,
+    theme.phaseInk.recovery,
+  ];
   const lanes = [0, 1, 2, 3];
 
   const progress = useSharedValue(PHASE_LANE[phase]);
@@ -69,7 +77,7 @@ export function PhaseIndicator({ phase }: { phase: Phase }) {
     backgroundColor: interpolateColor(progress.value, lanes, bg),
   }));
   const inkStyle = useAnimatedStyle(() => ({
-    color: interpolateColor(progress.value, lanes, fg),
+    color: interpolateColor(progress.value, lanes, ink),
   }));
   const dotStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(progress.value, lanes, fg),
