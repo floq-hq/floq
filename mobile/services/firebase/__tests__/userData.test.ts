@@ -1,11 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-const { getDocs, writeBatchMock, batch, setDoc, serverTimestamp, setWipeSelfInitiated, deleteDoc } = vi.hoisted(
+const { getDocs, getDoc, writeBatchMock, batch, setDoc, serverTimestamp, setWipeSelfInitiated, deleteDoc } = vi.hoisted(
   () => {
-    const batch = { delete: vi.fn(), commit: vi.fn(() => Promise.resolve()) };
+    const batch = { delete: vi.fn(), update: vi.fn(), commit: vi.fn(() => Promise.resolve()) };
     return {
       batch,
       getDocs: vi.fn(),
+      // M7.2/M7.3: the wipe reads the partner pointer (to sever the partnership +
+      // clean the cross-tree reaction). Configurable per-test; the beforeEach default
+      // is "solo" (no partner) so the non-partner wipe tests are unaffected.
+      getDoc: vi.fn(),
       writeBatchMock: vi.fn(() => batch),
       setDoc: vi.fn((..._a: unknown[]) => Promise.resolve()),
       serverTimestamp: vi.fn(() => '__server_ts__'),
@@ -20,9 +24,7 @@ vi.mock('firebase/firestore', () => ({
   collection: (_db: unknown, ...path: string[]) => ({ __path: path.join('/') }),
   doc: (_db: unknown, ...path: string[]) => ({ __doc: path.join('/') }),
   getDocs: (...a: unknown[]) => getDocs(...a),
-  // M7.2: the wipe reads the partner pointer to clean a cross-tree reaction.
-  // Default to "solo" (no partner) so existing wipe tests are unaffected.
-  getDoc: () => Promise.resolve({ exists: () => false, data: () => ({}) }),
+  getDoc: (...a: unknown[]) => getDoc(...a),
   writeBatch: () => writeBatchMock(),
   deleteDoc: (...a: unknown[]) => deleteDoc(...a),
   onSnapshot: vi.fn(),
@@ -37,9 +39,19 @@ function snapOf(ids: string[]) {
   return { docs: ids.map((id) => ({ ref: { __id: id } })) };
 }
 
+/** A solo pointer snapshot (no partner). */
+const SOLO = { exists: () => false, data: () => ({}) };
+/** A paired pointer snapshot naming `partnerUid` in pair `pairId`. */
+function paired(pairId: string, partnerUid: string) {
+  return { exists: () => true, data: () => ({ pair_id: pairId, partner_uid: partnerUid }) };
+}
+
 beforeEach(() => {
   getDocs.mockReset();
+  getDoc.mockReset();
+  getDoc.mockResolvedValue(SOLO); // default: solo unless a test opts into a partner
   batch.delete.mockClear();
+  batch.update.mockClear();
   batch.commit.mockClear();
   writeBatchMock.mockClear();
   setDoc.mockClear();
@@ -106,5 +118,33 @@ describe('wipeRemoteUserData', () => {
     await expect(wipeRemoteUserData('u1')).rejects.toThrow(/offline/);
     expect(setWipeSelfInitiated).not.toHaveBeenCalled();
     expect(setDoc).not.toHaveBeenCalled();
+  });
+
+  // M7.3 — severing the partnership (the NEVER-CUT privacy floor).
+  it('severs an active partnership: flips it to ended + tears down both pointers + the cross-tree reaction', async () => {
+    getDocs.mockResolvedValue(snapOf([])); // empty subcollections → the only batch is the teardown
+    getDoc.mockResolvedValue(paired('p2_u1', 'p2')); // u1 is paired with p2
+    await wipeRemoteUserData('u1');
+
+    // partnerships/{pairId} flipped active → ended (consent left untouched ⇒ frozen).
+    expect(batch.update).toHaveBeenCalledTimes(1);
+    const [ref, data] = batch.update.mock.calls[0];
+    expect(ref).toEqual({ __doc: 'partnerships/p2_u1' });
+    expect(data).toEqual({ status: 'ended', ended_at: '__server_ts__' });
+
+    // both pointers + my live reaction in p2's tree are deleted in the teardown batch.
+    const torn = batch.delete.mock.calls.map(([r]) => (r as { __doc: string }).__doc);
+    expect(torn).toContain('users/u1/partner/current'); // mine (owner grant)
+    expect(torn).toContain('users/p2/partner/current'); // theirs (L30 cross-tree grant)
+    expect(torn).toContain('users/p2/reactions/u1'); // my live reaction (reactor-delete)
+    expect(batch.commit).toHaveBeenCalled();
+  });
+
+  it('does NOT run a partnership teardown when the user is solo (no pointer)', async () => {
+    getDocs.mockResolvedValue(snapOf([]));
+    // getDoc default is SOLO.
+    await wipeRemoteUserData('u1');
+    expect(batch.update).not.toHaveBeenCalled();
+    expect(batch.delete).not.toHaveBeenCalled(); // no teardown + empty subcollections
   });
 });
