@@ -159,23 +159,22 @@ export async function acceptInvite(
     const pairId = pairIdOf(me, inviter);
     const [m0, m1] = me < inviter ? [me, inviter] : [inviter, me];
 
-    // Idempotency: same active partnership already exists -> no-op success.
     const pairRef = doc(db, 'partnerships', pairId);
-    const pairSnap = await tx.get(pairRef);
-    if (pairSnap.exists()) {
-      const p = pairSnap.data() as { status: string; members: string[] };
-      if (p.status === 'active' && p.members.includes(me) && p.members.includes(inviter)) {
-        return { pairId, alreadyPaired: true };
-      }
-      if (p.status === 'ended') throw new AcceptError('ended'); // re-pair is S7.0
-      throw new AcceptError('already-paired');
-    }
-
-    // Either party already paired -> reject (the singleton-pointer invariant).
     const myPtrRef = doc(db, 'users', me, 'partner', 'current');
     const theirPtrRef = doc(db, 'users', inviter, 'partner', 'current');
+
+    // The accepter may only READ what the rules grant: the invite (above) and
+    // their OWN partner pointer. The INVITER's pointer and the not-yet-existing
+    // partnership are NOT accepter-readable — a tx.get on either is
+    // permission-denied (the cross-device "offline" pairing bug). So the
+    // remaining invariants are enforced at WRITE time by the rules, not by a read:
+    //   - inviter-already-paired → the partnership CREATE rule requires
+    //     !exists(both pointers) AND the cross-tree pointer write is create-only;
+    //   - no double-create / re-pair → a partnership that already exists turns the
+    //     create-shaped set into an UPDATE, which the update rule denies.
+    // We still read MY own pointer (allowed) for a clean "already-paired" message
+    // and to short-circuit a double-tap; everything else fails closed at the write.
     if ((await tx.get(myPtrRef)).exists()) throw new AcceptError('already-paired');
-    if ((await tx.get(theirPtrRef)).exists()) throw new AcceptError('inviter-already-paired');
 
     // --- writes ---
     tx.set(pairRef, {
