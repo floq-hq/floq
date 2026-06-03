@@ -151,6 +151,23 @@ export async function cancelBreakReminder(): Promise<void> {
   await cancelByKind('break');
 }
 
+/** M7.notif — the cancel-on-ENTRY sweep: when a session begins, clear BOTH
+ *  entry-relevant reminders so neither the end-of-break nudge NOR the daily
+ *  session-start reminder can fire mid-session (the focused middle is sacred —
+ *  no notification interrupts it). Generalizes cancelBreakReminder: it awaits any
+ *  in-flight break schedule first (audit #30 — a fast start can't slip the sweep
+ *  in before the break notification registers), then cancels both kinds.
+ *
+ *  S calls this at the two existing session-entry sites
+ *  (useStartSession.launch + RestoreSessionPrompt.onResume), replacing the
+ *  break-only cancel. Idempotent; never prompts. The daily session-start reminder
+ *  is restored on session END via scheduleSessionStartReminder(preferred,
+ *  { request: false }) — already the app-launch resync's contract. */
+export async function cancelEntrySessionReminders(): Promise<void> {
+  await breakScheduleInFlight;
+  await Promise.all([cancelByKind('break'), cancelByKind('session-start')]);
+}
+
 /** Schedule (or reschedule) a daily reminder at the user's preferred time-of-day
  *  (onboarding Q3). Optional per S4.2; replaces the previous schedule. Pass
  *  { request: false } from the app-open resync so a launch never prompts. */

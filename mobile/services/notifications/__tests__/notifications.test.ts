@@ -47,6 +47,7 @@ import {
   preferredTimeToHour,
   breakReminderSeconds,
   cancelBreakReminder,
+  cancelEntrySessionReminders,
   ensurePermission,
   scheduleBreakReminder,
   scheduleSessionStartReminder,
@@ -177,6 +178,58 @@ describe('cancelBreakReminder', () => {
   it('does NOT prompt for permission (cancel path is side-effect free)', async () => {
     state.permission = { granted: false, canAskAgain: true };
     await cancelBreakReminder();
+    expect(mocks.requestPermissionsAsync).not.toHaveBeenCalled();
+  });
+});
+
+// M7.notif — the cancel-on-ENTRY sweep clears BOTH reminder kinds so neither the
+// end-of-break nudge nor the daily session-start reminder fires mid-session.
+describe('cancelEntrySessionReminders', () => {
+  it('clears BOTH the break and the session-start reminders', async () => {
+    state.permission = { granted: true, canAskAgain: false };
+    await scheduleBreakReminder(5);
+    await scheduleSessionStartReminder('morning');
+    expect(state.scheduled).toHaveLength(2);
+
+    await cancelEntrySessionReminders();
+    expect(state.scheduled).toHaveLength(0); // both swept
+  });
+
+  it('leaves an unrelated kind untouched (only break + session-start are entry reminders)', async () => {
+    state.permission = { granted: true, canAskAgain: false };
+    await scheduleSessionStartReminder('morning');
+    state.scheduled.push({ identifier: 'other', content: { data: { kind: 'other' as never } } });
+
+    await cancelEntrySessionReminders();
+    expect(state.scheduled.map((n) => n.content.data?.kind)).toEqual(['other']);
+  });
+
+  it('is idempotent / a no-op when nothing is scheduled', async () => {
+    await cancelEntrySessionReminders();
+    expect(mocks.cancelScheduledNotificationAsync).not.toHaveBeenCalled();
+  });
+
+  // audit #30 — like cancelBreakReminder, it awaits an in-flight break schedule so
+  // a fast session-entry can't slip the sweep in before the notification registers.
+  it('cancels a break reminder that races a still-pending schedule', async () => {
+    state.permission = { granted: true, canAskAgain: false };
+    mocks.scheduleNotificationAsync.mockImplementationOnce(async (req) => {
+      await new Promise((r) => setTimeout(r, 20));
+      const identifier = `id-${state.nextId++}`;
+      state.scheduled.push({ identifier, content: req.content });
+      return identifier;
+    });
+
+    const schedulePromise = scheduleBreakReminder(5); // NOT awaited
+    await cancelEntrySessionReminders();
+    await schedulePromise;
+
+    expect(state.scheduled).toHaveLength(0);
+  });
+
+  it('does NOT prompt for permission (cancel path is side-effect free)', async () => {
+    state.permission = { granted: false, canAskAgain: true };
+    await cancelEntrySessionReminders();
     expect(mocks.requestPermissionsAsync).not.toHaveBeenCalled();
   });
 });
