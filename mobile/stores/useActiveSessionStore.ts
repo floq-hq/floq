@@ -20,6 +20,7 @@ import {
 } from '../services/session/activeSessionPersist';
 import { finalizeOnAbandon } from '../services/session/finalize';
 import { saveCompletedSession } from '../services/storage/sessions';
+import { writePresenceFocusing } from '../services/presence/presence';
 import type {
   ActiveSession,
   CompletedSession,
@@ -78,16 +79,22 @@ export const useActiveSessionStore = create<ActiveSessionState>((set, get) => {
 
     hydrate: () => set({ active: loadActiveSession(), hydrated: true }),
 
-    startSession: ({ taskId, task, plan }) =>
+    startSession: ({ taskId, task, plan }) => {
+      const startedAt = Date.now();
       commit({
         sessionId: genId(),
         taskId,
         task,
         plan,
-        startedAt: Date.now(),
+        startedAt,
         currentPhase: 'struggle',
         distractions: [],
-      }),
+      });
+      // M7.1: live "focusing" presence for a consented partner. Best-effort,
+      // fire-and-forget — same startedAt the mirror committed (the staleness
+      // clamp keys on it). Never blocks the session start.
+      void writePresenceFocusing(startedAt, 'struggle').catch(() => {});
+    },
 
     logDistraction: (timestamp = Date.now()) => {
       const { active } = get();

@@ -10,6 +10,12 @@ const { writeSessionMock } = vi.hoisted(() => ({
   writeSessionMock: vi.fn((..._a: unknown[]) => Promise.resolve()),
 }));
 vi.mock('../distraction', () => ({ writeSession: writeSessionMock }));
+// M7.1: storage/sessions now pulls the partner projections — stub them so the
+// import chain stays firebase-free.
+vi.mock('../../social/summary', () => ({ writeSocialSummary: vi.fn(() => Promise.resolve()) }));
+vi.mock('../../presence/presence', () => ({
+  writePresenceJustFinished: vi.fn(() => Promise.resolve()),
+}));
 // restore.ts reads telemetry consent (to stamp the captured sample); mock the
 // store so the test doesn't pull the settings store → firestoreMirror → firebase.
 vi.mock('../../../stores/useSettingsStore', () => ({

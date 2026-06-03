@@ -15,6 +15,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { updateProfile } from 'firebase/auth';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { db, auth, useCurrentUser } from './index';
+import { projectDisplayName } from '../social/profile';
 
 /** The editable/displayable slice of `users/{uid}`. `createdAt` is normalized to
  *  epoch-ms (the stored value is a Firestore Timestamp; null while the
@@ -65,6 +66,9 @@ export async function updateDisplayName(uid: string, name: string): Promise<void
   if (auth.currentUser) {
     await updateProfile(auth.currentUser, { displayName: trimmed });
   }
+  // M7.1: refresh the partner-visible (sanitized) name projection. Best-effort —
+  // a stale projection self-heals on the next edit / app foreground.
+  void projectDisplayName(trimmed).catch(() => {});
 }
 
 /** The current user's profile, via TanStack Query. Gated on the signed-in uid

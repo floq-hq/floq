@@ -40,6 +40,21 @@ service cloud.firestore {
         && request.auth.uid in get(/databases/$(database)/documents/partnerships/$(pairIdOf(request.auth.uid, ownerUid))).data.members;
     }
 
+    // M7.1 — partner read WITH share-consent (L28). Reuses the SAME partnership
+    // doc isPartner already fetches, so the rules engine dedupes the get() →
+    // +0 budget over isPartner. The map-level `.get('share_consent', {})` default
+    // makes a pre-M7.1 partnership (no field) deny cleanly instead of erroring.
+    function partnerCanRead(ownerUid) {
+      return isPartner(ownerUid)
+        && get(/databases/$(database)/documents/partnerships/$(pairIdOf(request.auth.uid, ownerUid)))
+             .data.get('share_consent', {}).get(ownerUid, false) == true;
+    }
+
+    // The OTHER member of a partnership doc (for the consent-self-toggle freeze).
+    function otherMemberOf(res, me) {
+      return res.data.members[0] == me ? res.data.members[1] : res.data.members[0];
+    }
+
     // M2.2 — owner-only on the user document and all owned subcollections.
     match /users/{uid} {
       allow read, write: if isSignedIn() && request.auth.uid == uid;
@@ -49,14 +64,32 @@ service cloud.firestore {
       }
     }
 
-    // M7.0 — RELEASE GATE B. An active partner may READ the owner's session
-    // summary projection (the title-stripped social/summary; writer lands M7.1).
-    // ADDITIVE to the owner's recursive grant above. Writes stay owner-only (no
-    // write clause here -> falls through to the recursive owner grant). The
-    // partner has NO read match for sessions/{id}, tasks/**, the raw users/{uid}
-    // doc, or the partner pointer, so all of those stay DENIED (L4 holds).
+    // M7.0 GATE B + M7.1 consent. An active partner may READ the owner's
+    // title-stripped session summary — but only once the owner has CONSENTED
+    // (partnerCanRead). ADDITIVE to the owner's recursive grant; writes stay
+    // owner-only (the M7.1 writer is owner-self). The partner has NO read match
+    // for sessions/{id}, tasks/**, the raw users/{uid} doc, or the partner
+    // pointer, so all of those stay DENIED (L4 holds).
     match /users/{ownerUid}/social/summary {
+      allow read: if isSignedIn() && (request.auth.uid == ownerUid || partnerCanRead(ownerUid));
+    }
+
+    // M7.1 — partner-visible display-name projection. Gated on isPartner WITHOUT
+    // consent (per L28 the consent flag covers focus ACTIVITY — summaries +
+    // presence — not identity): a partner can see your NAME the moment you pair
+    // (you invited them; powers the dormant "{name} joined" state), but not your
+    // minutes/score/live-state until you consent. Writes are owner-only via the
+    // recursive grant (the projection writer is owner-self).
+    match /users/{ownerUid}/social/profile {
       allow read: if isSignedIn() && (request.auth.uid == ownerUid || isPartner(ownerUid));
+    }
+
+    // M7.1 — coarse live presence. Owner write/delete; a CONSENTED active partner
+    // reads. Staleness/decay is a client concern (derivePresence) — the rule just
+    // gates WHO can read whatever state is stored.
+    match /presence/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || partnerCanRead(uid));
+      allow write, delete: if isSignedIn() && request.auth.uid == uid;
     }
 
     // M7.0 — the singleton partner pointer. The owner's own read/write/delete
@@ -146,7 +179,8 @@ service cloud.firestore {
         && request.resource.data.created_at == request.time
         && request.resource.data.pair_streak_days == 0
         && request.resource.data.invite_code is string
-        && request.resource.data.keys().hasOnly(['members', 'status', 'created_at', 'pair_streak_days', 'invite_code'])
+        && request.resource.data.share_consent == {} // M7.1 — default-OFF (L28); empty at create
+        && request.resource.data.keys().hasOnly(['members', 'status', 'created_at', 'pair_streak_days', 'invite_code', 'share_consent'])
         // a committed, pending, unexpired invite FROM the other member:
         && exists(/databases/$(database)/documents/partner_invites/$(request.resource.data.invite_code))
         && get(/databases/$(database)/documents/partner_invites/$(request.resource.data.invite_code)).data.from_uid
@@ -161,23 +195,42 @@ service cloud.firestore {
 
       allow get, list: if isSignedIn() && request.auth.uid in resource.data.members;
 
-      // Members-only updates: either a streak update (status frozen) OR the L30
-      // end transition (active -> ended, optional self-block). members /
-      // created_at / invite_code are immutable; ended is terminal (no un-end).
+      // Members-only updates, immutables (members/created_at/invite_code) frozen.
+      // Three branches: (a) streak-only, (b) the L30 end transition, (c) the M7.1
+      // consent-self-toggle. CRITICAL: (a) and (b) must FREEZE share_consent, else
+      // the streak branch is a back door to flip the OTHER member's consent bit —
+      // branch (c)'s otherUid freeze would be moot. (`.get('share_consent', {})`
+      // tolerates a legacy doc with no field.)
       allow update: if isSignedIn()
         && request.auth.uid in resource.data.members
         && request.resource.data.members == resource.data.members
         && request.resource.data.created_at == resource.data.created_at
         && request.resource.data.invite_code == resource.data.invite_code
         && (
+          // (a) streak-only — status + consent frozen.
           ( request.resource.data.status == resource.data.status
-            && request.resource.data.keys().hasOnly(['members', 'status', 'created_at', 'pair_streak_days', 'invite_code'])
+            && request.resource.data.get('share_consent', {}) == resource.data.get('share_consent', {})
+            && request.resource.data.keys().hasOnly(['members', 'status', 'created_at', 'pair_streak_days', 'invite_code', 'share_consent'])
           )
           ||
+          // (b) L30 end transition (active -> ended, optional self-block) — consent frozen.
           ( resource.data.status == 'active'
             && request.resource.data.status == 'ended'
-            && request.resource.data.keys().hasOnly(['members', 'status', 'created_at', 'pair_streak_days', 'invite_code', 'blocked_by', 'ended_at'])
+            && request.resource.data.get('share_consent', {}) == resource.data.get('share_consent', {})
+            && request.resource.data.keys().hasOnly(['members', 'status', 'created_at', 'pair_streak_days', 'invite_code', 'share_consent', 'blocked_by', 'ended_at'])
             && (!('blocked_by' in request.resource.data) || request.resource.data.blocked_by == request.auth.uid)
+          )
+          ||
+          // (c) consent-self-toggle — change ONLY my own key; status + streak + the
+          // other member's key all frozen; no stray keys in the map.
+          ( request.resource.data.status == resource.data.status
+            && request.resource.data.pair_streak_days == resource.data.pair_streak_days
+            && request.resource.data.keys().hasOnly(['members', 'status', 'created_at', 'pair_streak_days', 'invite_code', 'share_consent'])
+            && request.resource.data.share_consent is map
+            && request.resource.data.share_consent[request.auth.uid] is bool
+            && request.resource.data.share_consent.keys().hasOnly(resource.data.members)
+            && request.resource.data.share_consent.get(otherMemberOf(resource, request.auth.uid), false)
+                 == resource.data.get('share_consent', {}).get(otherMemberOf(resource, request.auth.uid), false)
           )
         );
 

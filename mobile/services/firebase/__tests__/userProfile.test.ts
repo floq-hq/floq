@@ -22,6 +22,8 @@ vi.mock('firebase/firestore', () => ({
 vi.mock('firebase/auth', () => ({
   updateProfile: (...args: unknown[]) => updateProfile(...args),
 }));
+// M7.1: updateDisplayName fires the name projection — stub it (firebase-free).
+vi.mock('../../social/profile', () => ({ projectDisplayName: vi.fn(() => Promise.resolve()) }));
 
 import { getUserProfile, updateDisplayName } from '../userProfile';
 
