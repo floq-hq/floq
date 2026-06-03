@@ -265,7 +265,9 @@ export function blockPartner(): Promise<void> {
 export async function setShareConsent(value: boolean): Promise<void> {
   const me = requireUid();
   const ptr = await readMyPointer();
-  if (!ptr) return; // solo — nothing to consent to
+  // Solo (e.g. just unpaired on another device): surface it so the optimistic UI
+  // toggle rolls back instead of showing "on" with nothing written.
+  if (!ptr) throw new Error('[partners] setShareConsent: not paired');
   await updateDoc(doc(db, 'partnerships', ptr.pairId), {
     [`share_consent.${me}`]: value,
   });

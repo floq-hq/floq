@@ -262,9 +262,9 @@ describe('setShareConsent (M7.1)', () => {
     expect(payload).toEqual({ 'share_consent.aaa': true });
   });
 
-  it('is a no-op when solo (no pointer)', async () => {
+  it('throws when solo (no pointer) so the optimistic toggle rolls back', async () => {
     h.getDoc.mockResolvedValueOnce({ exists: () => false });
-    await setShareConsent(true);
+    await expect(setShareConsent(true)).rejects.toThrow(/not paired/);
     expect(h.updateDoc).not.toHaveBeenCalled();
   });
 });

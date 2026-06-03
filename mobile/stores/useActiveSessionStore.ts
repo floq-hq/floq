@@ -106,6 +106,11 @@ export const useActiveSessionStore = create<ActiveSessionState>((set, get) => {
       const { active } = get();
       if (!active) return;
       commit({ ...active, currentPhase: phase });
+      // M7.1: keep the partner-visible presence phase fresh as the session
+      // advances — without this it stays 'struggle' the whole session and a
+      // partner always reads "getting started". Same startedAt preserves the
+      // staleness clamp. Best-effort, never blocks the phase transition.
+      void writePresenceFocusing(active.startedAt, phase).catch(() => {});
     },
 
     endSession: () => {

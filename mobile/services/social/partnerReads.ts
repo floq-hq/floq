@@ -7,7 +7,8 @@
 // a denied read surfaces as the empty/dormant state, never an error.
 
 import { useEffect, useState } from 'react';
-import { collection, doc, onSnapshot } from 'firebase/firestore';
+import { AppState } from 'react-native';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase/init';
 import { subscribePresence } from '../presence/presence';
 import {
@@ -20,10 +21,29 @@ import {
 // to `idle` on screen without waiting for a new snapshot.
 const PRESENCE_REFRESH_MS = 30_000;
 
+/**
+ * Bumps on every return to foreground. A Firestore onSnapshot that hits a
+ * permission-denied (e.g. the partner hadn't consented yet) is TERMINATED and
+ * never retries on its own — so a consent grant wouldn't surface until a remount.
+ * Threading this nonce through the listener effects re-subscribes on foreground,
+ * which recovers a dead listener once the rule would now allow the read.
+ */
+function useForegroundNonce(): number {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') setN((x) => x + 1);
+    });
+    return () => sub.remove();
+  }, []);
+  return n;
+}
+
 /** Live, freshness-clamped presence of the partner. `{state:'idle'}` when solo. */
 export function usePartnerPresence(partnerUid: string | null | undefined): DerivedPresence {
   const [raw, setRaw] = useState<PresenceDoc | null>(null);
   const [, tick] = useState(0);
+  const nonce = useForegroundNonce();
 
   useEffect(() => {
     if (!partnerUid) {
@@ -31,7 +51,7 @@ export function usePartnerPresence(partnerUid: string | null | undefined): Deriv
       return;
     }
     return subscribePresence(partnerUid, setRaw);
-  }, [partnerUid]);
+  }, [partnerUid, nonce]); // re-subscribe on foreground (recovers a denied listener)
 
   useEffect(() => {
     const id = setInterval(() => tick((n) => n + 1), PRESENCE_REFRESH_MS);
@@ -54,6 +74,7 @@ function useLiveDoc<T>(
 ): LiveRead<T> {
   const [state, setState] = useState<LiveRead<T>>({ data: null, loading: true });
   const key = segments?.join('/') ?? null;
+  const nonce = useForegroundNonce();
 
   useEffect(() => {
     if (!segments) {
@@ -74,9 +95,10 @@ function useLiveDoc<T>(
         setState({ data: null, loading: false });
       },
     );
-    // re-subscribe only when the target path changes.
+    // re-subscribe when the path changes OR on foreground (recovers a listener
+    // that died on a permission-denied before the partner consented).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+  }, [key, nonce]);
 
   return state;
 }

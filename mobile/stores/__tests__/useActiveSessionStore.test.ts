@@ -86,6 +86,15 @@ describe('setPhase', () => {
     s.setPhase('flow');
     expect(useActiveSessionStore.getState().active?.currentPhase).toBe('flow');
   });
+
+  it('re-writes partner presence with the new phase (so it does not stay "struggle")', async () => {
+    const { writePresenceFocusing } = await import('../../services/presence/presence');
+    const s = useActiveSessionStore.getState();
+    s.startSession(input);
+    vi.mocked(writePresenceFocusing).mockClear();
+    s.setPhase('flow');
+    expect(writePresenceFocusing).toHaveBeenCalledWith(expect.any(Number), 'flow');
+  });
 });
 
 describe('endSession', () => {
