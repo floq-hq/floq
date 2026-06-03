@@ -12,6 +12,11 @@
 // The tombstone is the explicit, timestamped "this was cleared" event that
 // useDataWipeSync watches to clear the other device too.
 //
+// It ALSO severs any active partnership (M7.3, NEVER-CUT privacy floor): a wiped
+// user must be FULLY unreadable by their (ex-)partner, which means tearing down the
+// co-owned partnership edge — not just the projections — so the partner-read grants
+// (incl. the NAME) stop matching. See the teardown block in wipeRemoteUserData.
+//
 // NOT touched: `training_samples` (anonymized, unlinkable, create-only — can't be
 // deleted, by design, L23) and the rest of the `users/{uid}` doc (account stays).
 // This is distinct from sign-out, which clears LOCAL state but preserves the
@@ -27,6 +32,7 @@ import {
   serverTimestamp,
   setDoc,
   writeBatch,
+  type DocumentReference,
   type Unsubscribe,
 } from 'firebase/firestore';
 import { db } from './init';
@@ -58,39 +64,62 @@ async function deleteSubcollection(
   }
 }
 
+/** Delete a fixed set of single docs in parallel — the standardized counterpart
+ *  to deleteSubcollection for the one-off projection egress points (no pagination
+ *  needed; the set is small and known). */
+async function deleteDocs(refs: DocumentReference[]): Promise<void> {
+  await Promise.all(refs.map((ref) => deleteDoc(ref)));
+}
+
 /**
- * Erase the signed-in user's session + task mirror from Firestore, then stamp the
- * wipe tombstone. Awaited by the clear-history flow BEFORE the local wipe, so the
- * next sync snapshot is empty and nothing resurrects. Rejects on a write error
- * (e.g. offline) — the caller surfaces it rather than clearing local-only (which
- * would let the cloud copy sync back).
+ * Erase the signed-in user's session + task mirror + partner-visible projections
+ * from Firestore, sever any active partnership (M7.3), then stamp the wipe tombstone.
+ * Awaited by the clear-history flow BEFORE the local wipe, so the next sync snapshot
+ * is empty and nothing resurrects. Rejects on a write error (e.g. offline) — the
+ * caller surfaces it rather than clearing local-only (which would let the cloud copy
+ * sync back).
  */
 export async function wipeRemoteUserData(uid: string): Promise<void> {
   await deleteSubcollection(uid, 'sessions');
   await deleteSubcollection(uid, 'tasks');
-  // M7.2: reactions I RECEIVED (my own subtree) + my live reaction in my current
-  // partner's tree (the ungated reactor-delete grant authorizes the latter).
-  // analytics_events is uid-linked but create-only by design (NOT deletable —
-  // like training_samples), so it's intentionally not part of the wipe. A
-  // reaction orphaned in an ENDED partner's tree is unreachable post-unpair but
-  // invisible (the ended edge denies all reads) — endPartnership cleans the live
-  // one at unpair time.
+  // M7.2: reactions I RECEIVED (my own subtree). My live reaction WRITTEN in my
+  // current partner's tree is torn down by the M7.3 partnership-sever block below
+  // (the same ungated reactor-delete grant). analytics_events is uid-linked but
+  // create-only by design (NOT deletable — like training_samples), so it's
+  // intentionally not part of the wipe.
   await deleteSubcollection(uid, 'reactions');
   // M7.1 partner-visible projections: "Clear history" must also erase what a
   // CURRENT partner can still read, or a wiped user's last-session minutes/score
   // (social/summary) and live state (presence) stay visible on their partner's
   // device. All three are own-tree (owner-only rules authorize the delete).
-  await Promise.all([
-    deleteDoc(doc(db, 'users', uid, 'social', 'summary')),
-    deleteDoc(doc(db, 'users', uid, 'social', 'profile')),
-    deleteDoc(doc(db, 'presence', uid)),
+  await deleteDocs([
+    doc(db, 'users', uid, 'social', 'summary'),
+    doc(db, 'users', uid, 'social', 'profile'),
+    doc(db, 'presence', uid),
   ]);
-  try {
-    const ptr = await getDoc(doc(db, 'users', uid, 'partner', 'current'));
-    const partnerUid = ptr.exists() ? (ptr.data().partner_uid as string | undefined) : undefined;
-    if (partnerUid) await deleteDoc(doc(db, 'users', partnerUid, 'reactions', uid));
-  } catch {
-    // best-effort cross-tree cleanup; the wipe proper (own subtrees) already ran
+  // M7.3 (NEVER-CUT privacy floor): deleting the projections is NOT enough — while
+  // the partnership stays `active`, isPartner() is still true for the ex-partner, so
+  // the NAME projection becomes readable again the instant anything re-creates it
+  // (projectDisplayName fires on every invite/accept/display-name edit). So the wipe
+  // must SEVER the edge, exactly as endPartnership (partners.ts) does for REMOVE: flip
+  // partnerships/{pairId} → ended and tear down BOTH pointers + the cross-tree reaction
+  // I wrote. Inlined here (vs reusing removePartner) to keep this function uid-param'd
+  // and its unit test free of partners.ts module side-effects. This is the L30 grant.
+  // Hard + awaited (no longer best-effort): a wiped user being fully unreadable is the
+  // floor, and a failure must reject the wipe (the caller then keeps local intact).
+  const ptr = await getDoc(doc(db, 'users', uid, 'partner', 'current'));
+  if (ptr.exists()) {
+    const { pair_id, partner_uid } = ptr.data() as { pair_id: string; partner_uid: string };
+    const teardown = writeBatch(db);
+    // active → ended (L30 update branch (b)); share_consent left untouched ⇒ frozen.
+    teardown.update(doc(db, 'partnerships', pair_id), {
+      status: 'ended',
+      ended_at: serverTimestamp(),
+    });
+    teardown.delete(doc(db, 'users', uid, 'partner', 'current')); // mine (owner grant)
+    teardown.delete(doc(db, 'users', partner_uid, 'partner', 'current')); // theirs (L30 grant)
+    teardown.delete(doc(db, 'users', partner_uid, 'reactions', uid)); // my live reaction
+    await teardown.commit();
   }
   // Mark self-initiated BEFORE the write so our OWN tombstone echo (which arrives
   // via useDataWipeSync) only advances the marker and does not re-run the local

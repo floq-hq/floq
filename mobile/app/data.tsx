@@ -120,7 +120,8 @@ export default function DataScreen() {
           />
           <Text variant="caption" color={theme.textMuted} style={styles.actionNote}>
             Permanently deletes your sessions, stats, and tasks — on this device and your
-            other devices. Anonymized shared data isn’t affected.
+            other devices. If you have a focus partner, it also ends that partnership.
+            Anonymized shared data isn’t affected.
           </Text>
           {error ? (
             <Text variant="caption" color={theme.danger} style={styles.actionNote}>
