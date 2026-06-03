@@ -10,10 +10,14 @@ const h = vi.hoisted(() => ({
   txDocs: new Map<string, unknown>(),
   writes: [] as Array<[op: string, path: string, data?: unknown]>,
   batchOps: [] as Array<[op: string, path: string, data?: unknown]>,
+  projectDisplayName: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('../init', () => ({ db: {} }));
 vi.mock('../auth', () => ({ auth: h.auth }));
+// Stub the M7.1 name projection so its fire-and-forget setDoc doesn't pollute the
+// setDoc assertions here; the projection itself is tested in social/__tests__.
+vi.mock('../../social/profile', () => ({ projectDisplayName: h.projectDisplayName }));
 
 vi.mock('firebase/firestore', () => {
   const snapFor = (path: string) => ({
@@ -49,6 +53,7 @@ import {
   acceptInvite,
   removePartner,
   blockPartner,
+  setShareConsent,
   AcceptError,
   INVITE_ALPHABET,
 } from '../partners';
@@ -70,6 +75,7 @@ beforeEach(() => {
   h.txDocs.clear();
   h.writes.length = 0;
   h.batchOps.length = 0;
+  h.projectDisplayName.mockClear();
 });
 
 describe('normalizeCode', () => {
@@ -185,8 +191,10 @@ describe('acceptInvite — idempotency + success', () => {
 
     expect(byPath['partnerships/aaa_bbb']).toMatchObject({
       op: 'set',
-      data: { members: [A, B], status: 'active', pair_streak_days: 0, invite_code: CODE },
+      data: { members: [A, B], status: 'active', pair_streak_days: 0, invite_code: CODE, share_consent: {} },
     });
+    // M7.1: the accepter projects their own name after the pairing commits.
+    expect(h.projectDisplayName).toHaveBeenCalledTimes(1);
     expect(byPath[`users/${A}/partner/current`].data).toMatchObject({
       pair_id: 'aaa_bbb', partner_uid: B, invite_code: CODE,
     });
@@ -229,5 +237,33 @@ describe('removePartner / blockPartner', () => {
     h.getDoc.mockResolvedValueOnce({ exists: () => false });
     await removePartner();
     expect(h.batchOps).toHaveLength(0);
+  });
+});
+
+describe('setShareConsent (M7.1)', () => {
+  it('updates only my own key via dot-path', async () => {
+    h.getDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ pair_id: 'aaa_bbb', partner_uid: B }),
+    });
+    await setShareConsent(true);
+    expect(h.updateDoc).toHaveBeenCalledTimes(1);
+    const [ref, payload] = h.updateDoc.mock.calls[0];
+    expect(ref).toEqual({ path: 'partnerships/aaa_bbb' });
+    expect(payload).toEqual({ 'share_consent.aaa': true });
+  });
+
+  it('is a no-op when solo (no pointer)', async () => {
+    h.getDoc.mockResolvedValueOnce({ exists: () => false });
+    await setShareConsent(true);
+    expect(h.updateDoc).not.toHaveBeenCalled();
+  });
+});
+
+describe('createInvite projects the inviter name (M7.1)', () => {
+  it('fires projectDisplayName after writing the invite', async () => {
+    h.getDoc.mockResolvedValueOnce({ exists: () => false }); // no collision
+    await createInvite();
+    expect(h.projectDisplayName).toHaveBeenCalledTimes(1);
   });
 });

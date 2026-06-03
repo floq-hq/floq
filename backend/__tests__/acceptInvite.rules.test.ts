@@ -19,6 +19,7 @@ function partnership(a: string, b: string, overrides: Record<string, unknown> = 
     created_at: serverTimestamp(),
     pair_streak_days: 0,
     invite_code: CODE,
+    share_consent: {}, // M7.1 — empty-at-create
     ...overrides,
   };
 }
@@ -87,5 +88,12 @@ describe('Gate A — partnership create', () => {
     // invite is from carol, but the pair is alice+bob → from_uid != otherMember
     await seed((db) => seedInvite(db, CODE, C));
     await assertFails(setDoc(doc(authed(A), 'partnerships', PAIR_AB), partnership(A, B)));
+  });
+
+  it('A12: rejected when share_consent is non-empty at create (must default OFF)', async () => {
+    await seed((db) => seedInvite(db, CODE, B));
+    await assertFails(
+      setDoc(doc(authed(A), 'partnerships', PAIR_AB), partnership(A, B, { share_consent: { [A]: true } })),
+    );
   });
 });

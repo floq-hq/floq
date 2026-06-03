@@ -25,6 +25,10 @@ const { saveCompletedSession } = vi.hoisted(() => ({
   saveCompletedSession: vi.fn<(s: CompletedSession) => void>(),
 }));
 vi.mock('../../services/storage/sessions', () => ({ saveCompletedSession }));
+// M7.1: the start hook fires a presence write — stub it (firebase-free).
+vi.mock('../../services/presence/presence', () => ({
+  writePresenceFocusing: vi.fn(() => Promise.resolve()),
+}));
 
 import { useActiveSessionStore } from '../useActiveSessionStore';
 

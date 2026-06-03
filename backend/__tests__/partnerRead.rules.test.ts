@@ -21,12 +21,28 @@ afterAll(teardownEnv);
 beforeEach(clear);
 
 describe('Gate B — partner read of social/summary', () => {
-  it('B1: an active partner reads the summary', async () => {
+  it('B1: an active, CONSENTED partner reads the summary', async () => {
     await seed(async (db) => {
-      await seedPartnership(db, A, B, { status: 'active' });
+      await seedPartnership(db, A, B, { status: 'active', shareConsent: { [B]: true } });
       await seedSummary(db, B);
     });
     await assertSucceeds(getDoc(doc(authed(A), 'users', B, 'social', 'summary')));
+  });
+
+  it('B1b: an active but UN-consented partner is denied (M7.1 consent gate)', async () => {
+    await seed(async (db) => {
+      await seedPartnership(db, A, B, { status: 'active' }); // share_consent defaults {}
+      await seedSummary(db, B);
+    });
+    await assertFails(getDoc(doc(authed(A), 'users', B, 'social', 'summary')));
+  });
+
+  it('B1c: a legacy partnership (no share_consent field) denies cleanly, not errors', async () => {
+    await seed(async (db) => {
+      await seedPartnership(db, A, B, { status: 'active', omitConsent: true });
+      await seedSummary(db, B);
+    });
+    await assertFails(getDoc(doc(authed(A), 'users', B, 'social', 'summary')));
   });
 
   it('B2: a non-partner is denied', async () => {
