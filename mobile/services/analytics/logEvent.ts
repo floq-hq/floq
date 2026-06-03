@@ -26,7 +26,9 @@ export type AnalyticsEventName =
   | 'install'
   | 'start_together'
   | 'skip'
-  | 'card_claim';
+  | 'card_claim'
+  | 'broadcast_created'
+  | 'broadcast_revoked';
 
 const storage = createMMKV();
 const SEQ_KEY = 'floq.analytics.seq';
