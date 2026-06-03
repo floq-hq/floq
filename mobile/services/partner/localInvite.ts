@@ -49,6 +49,19 @@ export function getWantPartner(): boolean {
   return storage.getString(WANT_PARTNER_KEY) === '1';
 }
 
+/** Deep link that pre-fills the code for a friend who already has the app. A cold
+ *  install can't be opened by it (the app isn't there yet) — it rides along in the
+ *  share text as a convenience; the typed code is the real carrier. */
+export function inviteLink(code: string): string {
+  return `floq://pair?code=${code}`;
+}
+
+/** The recruiting share text — the code + the pre-fill link. Pure; the one place
+ *  the invite copy lives, so the onboarding step and the Partner tab can't drift. */
+export function inviteShareMessage(code: string): string {
+  return `Let's focus together on Floq. Open the app and enter my invite code: ${code}\n${inviteLink(code)}`;
+}
+
 /** Device-global reset (call from auth.signOut alongside the other MMKV wipes). */
 export function clearLocalPartnerState(): void {
   storage.remove(MY_INVITE_KEY);
