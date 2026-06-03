@@ -20,6 +20,7 @@
  */
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
+import { router } from 'expo-router';
 import { Avatar, Card, Pill, Text } from '../ui';
 import { useTheme } from '../../theme';
 import {
@@ -39,25 +40,37 @@ import {
   canReact,
   formatWhen,
   presenceDisplay,
+  shouldShowStartTogether,
 } from '../../services/partner/partnerViewModel';
+import { maybeRequestSocialNotifPermission } from '../../services/partner/notifSocialPrompt';
+import { logEvent } from '../../services/analytics/logEvent';
+import { useActiveSessionStore } from '../../stores/useActiveSessionStore';
+import { StartTogetherPrompt } from './StartTogetherPrompt';
+import { ShareConsentToggle } from './ShareConsentToggle';
 
 const REACTIONS: { kind: ReactionKind; glyph: string; label: string }[] = [
   { kind: 'fire', glyph: '🔥', label: 'Send fire reaction' },
   { kind: 'clap', glyph: '👏', label: 'Send clap reaction' },
 ];
 
-/** Data-binding wrapper: live presence + summary + name, and the reaction writes. */
+/** Data-binding wrapper: live presence + summary + name, the reaction writes,
+ *  the beat-1 "start one too?" surface, and the one share-consent toggle (S7.2).
+ *  Owns the SINGLE presence listener (Partner-tab-only per mobile/CLAUDE.md) and
+ *  shares it across all three surfaces — no second subscription. */
 export function PartnerView({
   partnerUid,
+  pairId,
   fallbackName,
 }: {
   partnerUid: string;
+  pairId: string;
   /** Name from the status read; the live profile hook refines it once it resolves. */
   fallbackName?: string | null;
 }) {
   const presence = usePartnerPresence(partnerUid);
   const { data: summary } = usePartnerSummary(partnerUid);
   const { data: profile } = usePartnerProfile(partnerUid);
+  const hasActiveSession = useActiveSessionStore((s) => s.active != null);
 
   const name = profile?.displayName ?? fallbackName ?? 'Your partner';
   const endedAt = summary?.endedAt ?? null;
@@ -79,16 +92,30 @@ export function PartnerView({
     }
     setReacted(kind);
     void sendReaction(partnerUid, kind, endedAt as number).catch(() => {});
+    // S7.2: a reaction is real social intent — the moment to ask for the OS
+    // notification permission (decoupled from the consent toggle; once).
+    void maybeRequestSocialNotifPermission('reaction');
+  }
+
+  function onStartTogether() {
+    logEvent('start_together');
+    router.navigate('/session'); // the launchpad; the start flow lives there
   }
 
   return (
-    <PartnerViewContent
-      name={name}
-      presence={presence}
-      summary={summary ?? null}
-      reacted={reacted}
-      onReact={onReact}
-    />
+    <View style={styles.stack}>
+      {shouldShowStartTogether(presence, hasActiveSession) && (
+        <StartTogetherPrompt partnerName={name} onStart={onStartTogether} />
+      )}
+      <PartnerViewContent
+        name={name}
+        presence={presence}
+        summary={summary ?? null}
+        reacted={reacted}
+        onReact={onReact}
+      />
+      <ShareConsentToggle pairId={pairId} partnerName={name} />
+    </View>
   );
 }
 
@@ -203,6 +230,7 @@ function Metric({ value, unit }: { value: string; unit: string }) {
 }
 
 const styles = StyleSheet.create({
+  stack: { gap: 16 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerText: { flex: 1, gap: 2 },
   name: {},
