@@ -10,6 +10,9 @@
 import { getDb } from '../../models/db';
 import { writeSession } from '../session/distraction';
 import { enqueueTrainingSample } from './trainingOutbox';
+import { writeSocialSummary } from '../social/summary';
+import { writePresenceJustFinished } from '../presence/presence';
+import { phaseFor } from '../timer';
 import type { CompletedSession } from '../session/types';
 import type { SessionPlan } from '../timer';
 
@@ -248,6 +251,19 @@ export function saveCompletedSession(s: CompletedSession, consented = false): vo
   void writeSession(s).catch(() => {
     // swallowed: SQLite already holds the truth; offline/signed-out is fine.
   });
+  // M7.1: partner-visible projections, best-effort (never block or throw into the
+  // session path). The summary (title-stripped) reflects the actual last session,
+  // so it fires for BOTH Done and saved partials. The live "just finished" beat is
+  // a celebration — only a real Done fires it; an abandoned partial stays quiet.
+  void writeSocialSummary(s).catch(() => {});
+  if (s.completed) {
+    void writePresenceJustFinished({
+      score: s.focusScore,
+      minutes: s.actualFocusMinutes,
+      endedAt: s.endedAt,
+      phase: phaseFor(s.actualFocusMinutes * 60, s.plan),
+    }).catch(() => {});
+  }
   // L23: stage the anonymized ML training sample locally (L2-clean — stays on
   // device). `consented` = was telemetry consent ON at capture; the egress flush
   // ships only consented rows, so enabling consent later never backfills earlier

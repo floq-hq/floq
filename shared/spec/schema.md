@@ -14,9 +14,11 @@ Legend: ✅ defined · 🧪 provisional (finalized by a later task) · ⏳ defer
 users/{uid}                        Single user document
 users/{uid}/sessions/{sessionId}   Subcollection — completed sessions (append-only)
 users/{uid}/tasks/{taskId}         Subcollection — current task queue (mirror of SQLite)
-users/{uid}/social/summary         Doc — partner-visible session summary projection (writer: M7.1)
+users/{uid}/social/summary         Doc — partner-visible session summary projection (M7.1; consent-gated)
+users/{uid}/social/profile         Doc — partner-visible sanitized display name (M7.1; isPartner-gated)
 users/{uid}/partner/current        Singleton pointer doc — the user's one active pairing (M7.0)
 
+presence/{uid}                     ✅ M7.1 — coarse live presence (consent-gated partner read)
 partnerships/{pairId}              ✅ Phase A (M7.0, per L18) — the 1:1 focus-partner edge
 partner_invites/{inviteId}         ✅ Phase A (M7.0, per L18) — inviteId === the 6-char code
 
@@ -126,6 +128,7 @@ Shared, derived cache of LLM task-parse results, keyed by an input hash (the has
 | `created_at` | Timestamp | ✅ | `serverTimestamp()` |
 | `pair_streak_days` | number | ✅ | seed `0`. Gentle design — grace periods; a partner's flake never nukes individual streaks (L16/L17) |
 | `invite_code` | string | ✅ | **provenance** — the code that created the pair. Lets the partnership-CREATE rule self-address the already-committed invite without a query (rules can't see sibling writes in the same commit) |
+| `share_consent` | map<uid,bool> | ✅ | M7.1 — each member's own key = "is MY focus data (summary + presence) visible to my partner". Empty `{}` at create (default-OFF, L28); a member toggles ONLY their own key. Gates `social/summary` + `presence` reads (NOT `social/profile` — identity is visible once paired). |
 | `blocked_by` | string | — | set with `status:'ended'` on BLOCK; names the blocker (L30) |
 | `ended_at` | Timestamp | — | set on REMOVE/BLOCK |
 
@@ -149,10 +152,37 @@ Shared, derived cache of LLM task-parse results, keyed by an input hash (the has
 | `since` | Timestamp | ✅ | `serverTimestamp()` |
 | `invite_code` | string | ✅ | provenance; addresses the invite for the cross-tree pairing-grant rule |
 
-**Access (rules in M7.0, `backend/firestore.rules`):**
+`presence/{uid}` ✅ M7.1 — coarse live presence (owner write/delete; consent-gated partner read). Timestamps are epoch-ms **numbers** so the client (`derivePresence`) can clamp freshness; staleness is NOT a rule concern.
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `state` | `'focusing' \| 'idle' \| 'just_finished'` | ✅ | `focusing` on session start; `just_finished` on a completed Done; `idle` on sign-out |
+| `phase` | Phase | — | current/end phase (struggle/release/flow/recovery) |
+| `started_at` | number (ms) | — | load-bearing for the `focusing` staleness clamp (≤90+5 min) |
+| `ended_at` | number (ms) | — | load-bearing for the `just_finished` decay (~30 min) |
+| `score` / `minutes` | number | — | coarse finish stats on `just_finished` |
+
+`users/{uid}/social/summary` ✅ M7.1 — the title-stripped session projection. **Structurally no `task`/`title` key.** Writer is owner-self on session-end (Done and saved partials).
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `minutes` | number | ✅ | actual focus minutes |
+| `focus_score` | number | ✅ | may be negative |
+| `ended_at` | Timestamp | ✅ | |
+| `phase_at_end` | Phase | ✅ | |
+
+`users/{uid}/social/profile` ✅ M7.1 — the partner-visible sanitized display name (length-capped, control-char-stripped, phone/URL/slur → "Floq user"). Projected on createInvite + acceptInvite + display-name edit (each member projects their OWN). Owner-write only.
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `display_name` | string | ✅ | sanitized projection of `users/{uid}.display_name` — never the raw value |
+| `updated_at` | Timestamp | ✅ | |
+
+**Access (rules in M7.0 + M7.1, `backend/firestore.rules`):**
 - `partner_invites/{code}`: `get` by code for any signed-in user (the code is the secret); no `list` (no enumeration); issuer creates/revokes; the accepter flips it to `accepted`.
 - `partnerships/{pairId}`: read/update by `members` only. **CREATE (release-gate A)** is a client transaction (Spark / no cloud function) gated on a valid committed invite from the counterpart + both members' pointers absent — proven **under the 10-`get()`/rule cap** by an emulator test. Members may flip `active → ended` (REMOVE/BLOCK, L30).
-- `users/{uid}/social/summary`: an **active partner** may READ it via the sorted-UID `isPartner()` predicate (release-gate B) — minutes / score / when, **NEVER task titles** (L4 holds); `sessions`, `tasks`, the raw user doc, and the partner pointer stay partner-DENIED. The summary **writer** lands in M7.1.
+- `users/{uid}/social/summary` + `presence/{uid}`: an **active partner WITH consent** may READ (release-gate B + M7.1 `partnerCanRead`) — minutes / score / when / live state, **NEVER task titles** (L4 holds); `sessions`, `tasks`, the raw user doc, and the partner pointer stay partner-DENIED. Consent is the owner's own `share_consent` key (default-OFF).
+- `users/{uid}/social/profile`: an **active partner** reads the sanitized NAME via `isPartner()` **without** consent (per L28 the consent flag covers focus *activity*, not identity — you can see a partner's name once paired).
 - `users/{uid}/partner/current`: owner-writable; plus two narrow cross-tree grants — a **pairing** grant (the accepter creates the counterpart's pointer, gated on a valid invite) and the **L30 unpair** grant (a member deletes the pointer that names them, to end the partnership). These are the only writes a user makes outside their own tree.
 
 Phase A stays on-device-friendly; only Phase B (stranger-matching, out of MVP scope, conditional on the W8 market read) would require sharing derived data server-side.

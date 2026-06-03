@@ -24,6 +24,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './init';
 import { auth } from './auth';
+import { projectDisplayName } from '../social/profile';
 
 /** 32 unambiguous symbols: 26 letters minus I/O (confusable with 1/0) + digits 2–9. */
 export const INVITE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -103,6 +104,9 @@ export async function createInvite(): Promise<{ code: string; link: string }> {
       // range-compare expires_at at write time; 72h window tolerates clock skew.
       expires_at: Timestamp.fromMillis(Date.now() + INVITE_TTL_MS),
     });
+    // M7.1: project my name now so it exists by the time someone accepts — powers
+    // the inviter-side "{name} joined — hasn't focused yet" dormant state.
+    void projectDisplayName(auth.currentUser?.displayName ?? '').catch(() => {});
     return { code, link: `floq://pair?code=${code}` };
   }
   throw new Error('[partners] createInvite: could not allocate a unique code');
@@ -132,7 +136,7 @@ export async function acceptInvite(
   const me = requireUid();
   const norm = normalizeCode(code); // throws AcceptError('bad-code') on a malformed code
 
-  return runTransaction(db, async (tx) => {
+  const result = await runTransaction(db, async (tx) => {
     // --- reads (all reads precede all writes in a Firestore transaction) ---
     const inviteRef = doc(db, 'partner_invites', norm);
     const inviteSnap = await tx.get(inviteRef);
@@ -178,6 +182,7 @@ export async function acceptInvite(
       created_at: serverTimestamp(),
       pair_streak_days: 0,
       invite_code: norm,
+      share_consent: {}, // M7.1: per-member sharing, default-OFF (L28); toggled later
     });
     tx.set(myPtrRef, {
       pair_id: pairId,
@@ -197,6 +202,11 @@ export async function acceptInvite(
 
     return { pairId, alreadyPaired: false };
   });
+
+  // M7.1: project my name after the pairing commits (self-write — NOT inside the
+  // transaction, which can't reach social/profile cross-tree). Best-effort.
+  void projectDisplayName(auth.currentUser?.displayName ?? '').catch(() => {});
+  return result;
 }
 
 /** Read my current pointer, or null if I'm solo. */
@@ -238,4 +248,19 @@ export function removePartner(): Promise<void> {
 /** Irreversible end + block (S7.3 confirms before calling). */
 export function blockPartner(): Promise<void> {
   return endPartnership(true);
+}
+
+/**
+ * Toggle MY share-consent on the active partnership (L28: explicit, default-OFF,
+ * per-member, revocable). The `share_consent.${me}` dot-path touches ONLY my key,
+ * leaving my partner's untouched — exactly what the consent-self-toggle rule
+ * branch expects. No-op when solo. S7.2 wires the one-tap toggle to this.
+ */
+export async function setShareConsent(value: boolean): Promise<void> {
+  const me = requireUid();
+  const ptr = await readMyPointer();
+  if (!ptr) return; // solo — nothing to consent to
+  await updateDoc(doc(db, 'partnerships', ptr.pairId), {
+    [`share_consent.${me}`]: value,
+  });
 }

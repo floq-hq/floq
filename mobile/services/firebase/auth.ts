@@ -38,6 +38,7 @@ import { queryClient } from '../queryClient';
 import { deleteAllSessions } from '../storage/sessions';
 import { deleteAllTrainingSamples } from '../storage/trainingOutbox';
 import { clearWipeMarker } from '../sync/wipeMarker';
+import { writePresenceIdle } from '../presence/presence';
 
 // getReactNativePersistence is exported only from Firebase's React Native build
 // (Metro resolves it via the `react-native` condition), so it exists at runtime
@@ -185,6 +186,13 @@ export async function signInWithGoogle(): Promise<User> {
 // --- Sign out --------------------------------------------------------------
 
 export async function signOut(): Promise<void> {
+  // M7.1: flip presence to idle while still authed — after firebaseSignOut the
+  // rule denies the write (no request.auth). Best-effort; never blocks sign-out.
+  try {
+    await writePresenceIdle();
+  } catch {
+    // ignore — a failed presence write must not block sign-out
+  }
   await firebaseSignOut(auth);
   // Best-effort Google session revoke. Lazy + guarded so a non-Google session
   // or a pre-rebuild client (module absent) just no-ops.

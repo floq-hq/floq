@@ -83,12 +83,19 @@ export async function seedInvite(
   });
 }
 
-/** Seed a partnership doc directly (admin) in a given status. */
+/** Seed a partnership doc directly (admin) in a given status. `shareConsent`
+ *  defaults to `{}` (the M7.1 default-OFF); pass `omitConsent` to simulate a
+ *  legacy pre-M7.1 doc with no field at all. */
 export async function seedPartnership(
   db: Firestore,
   a: string,
   b: string,
-  opts: { status?: string; blockedBy?: string } = {},
+  opts: {
+    status?: string;
+    blockedBy?: string;
+    shareConsent?: Record<string, boolean>;
+    omitConsent?: boolean;
+  } = {},
 ): Promise<string> {
   const { Timestamp } = await import('firebase/firestore');
   const [m0, m1] = a < b ? [a, b] : [b, a];
@@ -99,9 +106,29 @@ export async function seedPartnership(
     created_at: Timestamp.now(),
     pair_streak_days: 0,
     invite_code: 'ABCDEF',
+    ...(opts.omitConsent ? {} : { share_consent: opts.shareConsent ?? {} }),
     ...(opts.blockedBy ? { blocked_by: opts.blockedBy, ended_at: Timestamp.now() } : {}),
   });
   return pairId;
+}
+
+/** Seed a presence doc directly (admin). */
+export async function seedPresence(
+  db: Firestore,
+  uid: string,
+  data: Record<string, unknown> = { state: 'focusing', started_at: Date.now() },
+): Promise<void> {
+  await setDoc(doc(db, 'presence', uid), data);
+}
+
+/** Seed a partner-visible social/summary or social/profile doc directly (admin). */
+export async function seedSocial(
+  db: Firestore,
+  uid: string,
+  kind: 'summary' | 'profile',
+  data: Record<string, unknown>,
+): Promise<void> {
+  await setDoc(doc(db, 'users', uid, 'social', kind), data);
 }
 
 /** Seed a partner pointer doc directly (admin). */

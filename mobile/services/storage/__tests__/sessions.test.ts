@@ -10,6 +10,11 @@ const { writeSessionMock } = vi.hoisted(() => ({
   writeSessionMock: vi.fn((..._a: unknown[]) => Promise.resolve()),
 }));
 vi.mock('../../session/distraction', () => ({ writeSession: writeSessionMock }));
+// M7.1 partner projections fire from saveCompletedSession — stub them (firebase-free).
+vi.mock('../../social/summary', () => ({ writeSocialSummary: vi.fn(() => Promise.resolve()) }));
+vi.mock('../../presence/presence', () => ({
+  writePresenceJustFinished: vi.fn(() => Promise.resolve()),
+}));
 
 import { resetExpoSqliteFake } from '../../../test/expoSqliteFake';
 import {

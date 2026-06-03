@@ -26,6 +26,7 @@ export {
   acceptInvite,
   removePartner,
   blockPartner,
+  setShareConsent,
   normalizeCode,
   pairIdOf,
   AcceptError,
