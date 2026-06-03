@@ -7,6 +7,8 @@ rules_version = '2';
 //   - create-only anonymized training samples                    -> L23
 //   - partnership edge + invite-code install-and-pair + partner
 //     read of social/summary + the two cross-tree grants (L30)   -> M7.0
+//   - broadcast-card claim probe: capped multi-claim codes +
+//     per-claim edge records (additive; NO read grant in W7)      -> M7.4
 //
 // SAFETY (per CLAUDE.md): changes here must be backward-compatible and reviewed.
 // LOOSENING any rule requires explicit sign-off. M7.0 adds two deliberate,
@@ -304,6 +306,112 @@ service cloud.firestore {
         && request.resource.data.ts is number
         && request.resource.data.seq is number;
       allow read, update, delete: if false;
+    }
+
+    // M7.4 — the broadcast-card claim probe (the one k>1 growth mechanic). UNLIKE
+    // the single-use 1:1 partner_invites, a broadcast code is MULTI-CLAIM (a group
+    // chat works) but carries a HARD per-code outstanding-edge CAP + short TTL,
+    // enforced at claim-time in the write rule (PREVENTION), plus issuer bulk-revoke
+    // (CLEANUP). Two ADDITIVE collections; NO existing rule is touched and — by the
+    // chosen W7 scope — the claim grants NO presence/summary/profile read (the edge
+    // is a RECORD; the read grant is a W9 follow-on). So L4/L2 are untouched here.
+    //
+    // CAP model: rules can't count a collection, so claim_count on the code doc is
+    // the cap anchor + the transaction's concurrency anchor (two simultaneous Nth
+    // claims conflict on it; the loser retries, re-reads, and the <CAP rule denies).
+    // The edge-create get-checks the cap too (claim-time prevention). Residual: a
+    // rule can't bind the edge-create and the counter-increment into one mandatory
+    // pair, so a forged edge that skips the counter could exceed the cap — but with
+    // NO read grant that edge is INERT. When the W9 read grant lands, the cap must
+    // move onto the read predicate.
+
+    // The issuer's mintable code. inviteId-style: the code IS the doc id, so it's
+    // the addressing secret (get-by-id only; no list ⇒ codes can't be enumerated).
+    match /broadcast_codes/{code} {
+      allow get: if isSignedIn();
+      allow list: if false;
+
+      allow create: if isSignedIn()
+        && request.resource.data.from_uid == request.auth.uid
+        && request.resource.data.code == code
+        && request.resource.data.status == 'active'
+        && request.resource.data.claim_count == 0
+        && request.resource.data.created_at == request.time
+        && request.resource.data.expires_at is timestamp
+        && request.resource.data.expires_at > request.time
+        && request.resource.data.expires_at < request.time + duration.value(25, 'h') // ≤24h + skew
+        && request.resource.data.keys().hasOnly(['code', 'from_uid', 'status', 'created_at', 'expires_at', 'claim_count']);
+
+      // Immutables frozen; two transitions off an active code:
+      allow update: if isSignedIn()
+        && resource.data.status == 'active'
+        && request.resource.data.code == resource.data.code
+        && request.resource.data.from_uid == resource.data.from_uid
+        && request.resource.data.created_at == resource.data.created_at
+        && request.resource.data.expires_at == resource.data.expires_at
+        && request.resource.data.keys().hasOnly(['code', 'from_uid', 'status', 'created_at', 'expires_at', 'claim_count'])
+        && (
+          // (a) CLAIM — a non-issuer bumps the counter by exactly 1, under the cap,
+          // before expiry; status stays active. The atomic counterpart of the
+          // broadcast_edges create in the same claim transaction.
+          ( request.auth.uid != resource.data.from_uid
+            && request.resource.data.status == 'active'
+            && request.time < resource.data.expires_at
+            && resource.data.claim_count < 5
+            && request.resource.data.claim_count == resource.data.claim_count + 1
+          )
+          ||
+          // (b) REVOKE — the issuer flips active → revoked (blocks new claims);
+          // claim_count frozen.
+          ( request.auth.uid == resource.data.from_uid
+            && request.resource.data.status == 'revoked'
+            && request.resource.data.claim_count == resource.data.claim_count
+          )
+        );
+
+      allow delete: if false; // codes are revoked (status), never hard-deleted
+    }
+
+    // One edge per claim. id == "${from_uid}_${claimer_uid}" (issuer-first,
+    // directional; create-only ⇒ a repeat claim by the same user is a no-op).
+    match /broadcast_edges/{edgeId} {
+      // The issuer and that edge's claimer may read their own edge; the issuer may
+      // LIST their own edges (from_uid == me) to drive bulk-revoke.
+      allow get: if isSignedIn()
+        && (request.auth.uid == resource.data.from_uid || request.auth.uid == resource.data.claimer_uid);
+      allow list: if isSignedIn() && resource.data.from_uid == request.auth.uid;
+
+      // CLAIM — only the claimer, never self-claim, gated on a live (active +
+      // unexpired + under-cap) code FROM from_uid. get budget: 1 (the code).
+      allow create: if isSignedIn()
+        && request.resource.data.claimer_uid == request.auth.uid
+        && request.resource.data.from_uid != request.auth.uid
+        && edgeId == request.resource.data.from_uid + '_' + request.resource.data.claimer_uid
+        && request.resource.data.claimed_via_broadcast == true
+        && request.resource.data.status == 'active'
+        && request.resource.data.created_at == request.time
+        && request.resource.data.code is string
+        && request.resource.data.keys().hasOnly(['from_uid', 'claimer_uid', 'code', 'status', 'created_at', 'claimed_via_broadcast'])
+        && exists(/databases/$(database)/documents/broadcast_codes/$(request.resource.data.code))
+        && get(/databases/$(database)/documents/broadcast_codes/$(request.resource.data.code)).data.from_uid == request.resource.data.from_uid
+        && get(/databases/$(database)/documents/broadcast_codes/$(request.resource.data.code)).data.status == 'active'
+        && get(/databases/$(database)/documents/broadcast_codes/$(request.resource.data.code)).data.claim_count < 5
+        && request.time < get(/databases/$(database)/documents/broadcast_codes/$(request.resource.data.code)).data.expires_at;
+
+      // END — either member flips active → ended (issuer bulk-revoke / claimer
+      // leaves); immutables frozen. No hard delete.
+      allow update: if isSignedIn()
+        && (request.auth.uid == resource.data.from_uid || request.auth.uid == resource.data.claimer_uid)
+        && resource.data.status == 'active'
+        && request.resource.data.status == 'ended'
+        && request.resource.data.from_uid == resource.data.from_uid
+        && request.resource.data.claimer_uid == resource.data.claimer_uid
+        && request.resource.data.code == resource.data.code
+        && request.resource.data.created_at == resource.data.created_at
+        && request.resource.data.claimed_via_broadcast == resource.data.claimed_via_broadcast
+        && request.resource.data.keys().hasOnly(['from_uid', 'claimer_uid', 'code', 'status', 'created_at', 'claimed_via_broadcast']);
+
+      allow delete: if false;
     }
 
     // Everything else stays denied until its feature lands.

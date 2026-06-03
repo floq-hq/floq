@@ -161,3 +161,40 @@ export async function seedPointer(
     invite_code: 'ABCDEF',
   });
 }
+
+/** Seed a broadcast code (M7.4) directly (admin). `claimCount`/`status`/TTL overridable. */
+export async function seedBroadcastCode(
+  db: Firestore,
+  code: string,
+  fromUid: string,
+  opts: { status?: string; claimCount?: number; expiresInH?: number } = {},
+): Promise<void> {
+  const { Timestamp } = await import('firebase/firestore');
+  await setDoc(doc(db, 'broadcast_codes', code), {
+    code,
+    from_uid: fromUid,
+    status: opts.status ?? 'active',
+    created_at: Timestamp.now(),
+    expires_at: Timestamp.fromMillis(Date.now() + (opts.expiresInH ?? 24) * HOUR_MS),
+    claim_count: opts.claimCount ?? 0,
+  });
+}
+
+/** Seed a broadcast edge (M7.4) directly (admin). id == `${fromUid}_${claimerUid}`. */
+export async function seedBroadcastEdge(
+  db: Firestore,
+  fromUid: string,
+  claimerUid: string,
+  code: string,
+  opts: { status?: string } = {},
+): Promise<void> {
+  const { Timestamp } = await import('firebase/firestore');
+  await setDoc(doc(db, 'broadcast_edges', `${fromUid}_${claimerUid}`), {
+    from_uid: fromUid,
+    claimer_uid: claimerUid,
+    code,
+    status: opts.status ?? 'active',
+    created_at: Timestamp.now(),
+    claimed_via_broadcast: true,
+  });
+}

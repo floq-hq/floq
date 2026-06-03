@@ -23,6 +23,8 @@ presence/{uid}                     ✅ M7.1 — coarse live presence (consent-ga
 partnerships/{pairId}              ✅ Phase A (M7.0, per L18) — the 1:1 focus-partner edge
 partner_invites/{inviteId}         ✅ Phase A (M7.0, per L18) — inviteId === the 6-char code
 analytics_events/{eventId}         ✅ M7.2 — always-on first-party funnel sink (create-only, uid-linked)
+broadcast_codes/{code}             ✅ M7.4 — capped, multi-claim share-card code (the k>1 probe)
+broadcast_edges/{edgeId}           ✅ M7.4 — one coarse-only RECORD per claim (no read grant in W7)
 
 llm_cache/{hash}                   Shared LLM result cache (🧪 M2.3)
 
@@ -199,6 +201,28 @@ Shared, derived cache of LLM task-parse results, keyed by an input hash (the has
 | `kind` | string | ✅ | optional category (≤32) |
 | `props` | map | ✅ | shallow primitive map (≤16 keys); NO free text |
 
+`broadcast_codes/{code}` ✅ M7.4 — the issuer-minted, **multi-claim** share-card code (vs the single-use `partner_invites`). **`code === the doc id`** (the addressing secret; `get`-by-id only, no `list`). `claim_count` is the per-code **cap anchor** (rules can't count a collection) + the claim transaction's concurrency anchor.
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `code` | string | ✅ | == doc id |
+| `from_uid` | string | ✅ | the issuer (== `auth.uid` at create) |
+| `status` | `'active' \| 'revoked'` | ✅ | issuer flips `active → revoked` (bulk-revoke); blocks new claims |
+| `created_at` | Timestamp | ✅ | `serverTimestamp()` (rule asserts == request.time) |
+| `expires_at` | Timestamp | ✅ | short TTL (~24h; rule ceiling 25h for skew) — checked at claim-time |
+| `claim_count` | number | ✅ | starts 0; a claimer bumps `+1` (rule: `≤ cap`, cap = 5) |
+
+`broadcast_edges/{edgeId}` ✅ M7.4 — one **coarse-only RECORD** per claim. `edgeId = "${from_uid}_${claimer_uid}"` (issuer-first, directional; **create-only ⇒ a repeat claim is a no-op**). **W7: grants NO read** (presence/summary/profile reads are unchanged) — it advances the cap + fires the `card_claim` funnel event (the W8 Axis-A metric is the claim RATE). The read grant is a **W9** follow-on; the cap migrates onto a read predicate then.
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `from_uid` | string | ✅ | the issuer |
+| `claimer_uid` | string | ✅ | == `auth.uid` at create; `≠ from_uid` (no self-claim) |
+| `code` | string | ✅ | the broadcast code claimed |
+| `status` | `'active' \| 'ended'` | ✅ | issuer (bulk-revoke) or claimer (leave) flips `active → ended` |
+| `created_at` | Timestamp | ✅ | `serverTimestamp()` |
+| `claimed_via_broadcast` | `true` | ✅ | the tag distinguishing a broadcast claim from a 1:1 pairing |
+
 **Access (rules in M7.0 + M7.1 + M7.2, `backend/firestore.rules`):**
 - `partner_invites/{code}`: `get` by code for any signed-in user (the code is the secret); no `list` (no enumeration); issuer creates/revokes; the accepter flips it to `accepted`.
 - `partnerships/{pairId}`: read/update by `members` only. **CREATE (release-gate A)** is a client transaction (Spark / no cloud function) gated on a valid committed invite from the counterpart + both members' pointers absent — proven **under the 10-`get()`/rule cap** by an emulator test. Members may flip `active → ended` (REMOVE/BLOCK, L30).
@@ -207,6 +231,7 @@ Shared, derived cache of LLM task-parse results, keyed by an input hash (the has
 - `users/{uid}/partner/current`: owner-writable; plus two narrow cross-tree grants — a **pairing** grant (the accepter creates the counterpart's pointer, gated on a valid invite) and the **L30 unpair** grant (a member deletes the pointer that names them, to end the partnership).
 - `users/{uid}/reactions/{reactorUid}` (M7.2): the reactor cross-tree creates/updates their own reaction gated on `partnerCanRead` (you can only react to a session you're allowed to see); reactor-delete is **ungated** (so a reactor cleans up after unpair — `endPartnership` uses this). The owner reads their received reactions via the recursive grant. These cross-tree writes (pairing pointer, unpair pointer, reaction) are the only writes a user makes outside their own tree.
 - `analytics_events/{eventId}` (M7.2): create-only, `uid == auth.uid`, strict shape; no read/update/delete from any client. **Always-on** (no consent gate) and **not wiped** (create-only by design, like `training_samples`, but uid-linked).
+- `broadcast_codes/{code}` + `broadcast_edges/{edgeId}` (M7.4): **additive — no existing rule touched.** Issuer mints the code (`get`-by-id only, no `list`); a non-issuer claim creates `broadcast_edges/{from_uid}_{me}` AND bumps `claim_count` (+1, `< cap`) in one transaction — the per-code cap + TTL are enforced **at claim-time in the write rule**. A claimer reads only their OWN edge; the issuer can `list` (`from_uid == me`) to **bulk-revoke** (flip the code `revoked` + each edge `active → ended`). **No presence/summary/profile read grant in W7** (the edge is inert — a record). Residual: rules can't bind the edge-create to the counter, so a forged edge could exceed the cap, but with no read grant it grants nothing (the cap moves onto the read predicate when W9 adds reads).
 
 Phase A stays on-device-friendly; only Phase B (stranger-matching, out of MVP scope, conditional on the W8 market read) would require sharing derived data server-side.
 
