@@ -25,6 +25,7 @@ import {
 import { db } from './init';
 import { auth } from './auth';
 import { projectDisplayName } from '../social/profile';
+import { logEvent } from '../analytics/logEvent';
 
 /** 32 unambiguous symbols: 26 letters minus I/O (confusable with 1/0) + digits 2–9. */
 export const INVITE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -107,6 +108,7 @@ export async function createInvite(): Promise<{ code: string; link: string }> {
     // M7.1: project my name now so it exists by the time someone accepts — powers
     // the inviter-side "{name} joined — hasn't focused yet" dormant state.
     void projectDisplayName(auth.currentUser?.displayName ?? '').catch(() => {});
+    logEvent('invite_created'); // M7.2 funnel
     return { code, link: `floq://pair?code=${code}` };
   }
   throw new Error('[partners] createInvite: could not allocate a unique code');
@@ -206,6 +208,7 @@ export async function acceptInvite(
   // M7.1: project my name after the pairing commits (self-write — NOT inside the
   // transaction, which can't reach social/profile cross-tree). Best-effort.
   void projectDisplayName(auth.currentUser?.displayName ?? '').catch(() => {});
+  logEvent('invite_accepted', { already_paired: result.alreadyPaired }); // M7.2 funnel
   return result;
 }
 
@@ -237,6 +240,10 @@ async function endPartnership(block: boolean): Promise<void> {
   });
   batch.delete(doc(db, 'users', me, 'partner', 'current'));
   batch.delete(doc(db, 'users', ptr.partnerUid, 'partner', 'current'));
+  // M7.2: tear down the reaction I wrote in the (ex-)partner's tree while I still
+  // know their uid — the ungated reactor-delete grant authorizes this even as the
+  // edge flips to ended. After unpair the pointer is gone and it'd be unreachable.
+  batch.delete(doc(db, 'users', ptr.partnerUid, 'reactions', me));
   await batch.commit();
 }
 
@@ -263,4 +270,5 @@ export async function setShareConsent(value: boolean): Promise<void> {
   await updateDoc(doc(db, 'partnerships', ptr.pairId), {
     [`share_consent.${me}`]: value,
   });
+  logEvent('consent_set', { value }); // M7.2 funnel
 }

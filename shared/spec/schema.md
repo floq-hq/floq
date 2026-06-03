@@ -17,10 +17,12 @@ users/{uid}/tasks/{taskId}         Subcollection — current task queue (mirror 
 users/{uid}/social/summary         Doc — partner-visible session summary projection (M7.1; consent-gated)
 users/{uid}/social/profile         Doc — partner-visible sanitized display name (M7.1; isPartner-gated)
 users/{uid}/partner/current        Singleton pointer doc — the user's one active pairing (M7.0)
+users/{uid}/reactions/{reactorUid} ✅ M7.2 — fire/clap a partner left on this user's finished session
 
 presence/{uid}                     ✅ M7.1 — coarse live presence (consent-gated partner read)
 partnerships/{pairId}              ✅ Phase A (M7.0, per L18) — the 1:1 focus-partner edge
 partner_invites/{inviteId}         ✅ Phase A (M7.0, per L18) — inviteId === the 6-char code
+analytics_events/{eventId}         ✅ M7.2 — always-on first-party funnel sink (create-only, uid-linked)
 
 llm_cache/{hash}                   Shared LLM result cache (🧪 M2.3)
 
@@ -178,12 +180,33 @@ Shared, derived cache of LLM task-parse results, keyed by an input hash (the has
 | `display_name` | string | ✅ | sanitized projection of `users/{uid}.display_name` — never the raw value |
 | `updated_at` | Timestamp | ✅ | |
 
-**Access (rules in M7.0 + M7.1, `backend/firestore.rules`):**
+`users/{ownerUid}/reactions/{reactorUid}` ✅ M7.2 — a one-tap reaction the REACTOR left on the OWNER's finished session. Doc id = the reactor's uid (a re-react overwrites → idempotent, one live reaction per direction). The owner reads their own `reactions/*`; the reactor writes cross-tree into the owner's tree.
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `kind` | `'fire' \| 'clap'` | ✅ | |
+| `reacted_at` | Timestamp | ✅ | `serverTimestamp()` (the rule asserts it equals request.time) |
+| `session_ended_at` | Timestamp | ✅ | anchors to the specific finished session (the summary is a singleton that gets overwritten) |
+
+`analytics_events/{eventId}` ✅ M7.2 — the always-on first-party funnel instrument (the W8 Axis-A read). `eventId = "${uid}:${seq}"` (deterministic → idempotent re-send). **uid-LINKED and create-only / NOT wiped** — deliberately distinct from the anonymous L23 `training_samples`. NO titles / free text / display name (L4): `name` is a bounded enum, `props` a shallow primitive map.
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `uid` | string | ✅ | must equal the writer (`request.auth.uid`) |
+| `name` | string | ✅ | a funnel event name (bounded, ≤64) |
+| `ts` | number | ✅ | capture-time epoch ms (offline-truthful, NOT a server clock) |
+| `seq` | number | ✅ | per-device monotonic counter |
+| `kind` | string | ✅ | optional category (≤32) |
+| `props` | map | ✅ | shallow primitive map (≤16 keys); NO free text |
+
+**Access (rules in M7.0 + M7.1 + M7.2, `backend/firestore.rules`):**
 - `partner_invites/{code}`: `get` by code for any signed-in user (the code is the secret); no `list` (no enumeration); issuer creates/revokes; the accepter flips it to `accepted`.
 - `partnerships/{pairId}`: read/update by `members` only. **CREATE (release-gate A)** is a client transaction (Spark / no cloud function) gated on a valid committed invite from the counterpart + both members' pointers absent — proven **under the 10-`get()`/rule cap** by an emulator test. Members may flip `active → ended` (REMOVE/BLOCK, L30).
 - `users/{uid}/social/summary` + `presence/{uid}`: an **active partner WITH consent** may READ (release-gate B + M7.1 `partnerCanRead`) — minutes / score / when / live state, **NEVER task titles** (L4 holds); `sessions`, `tasks`, the raw user doc, and the partner pointer stay partner-DENIED. Consent is the owner's own `share_consent` key (default-OFF).
 - `users/{uid}/social/profile`: an **active partner** reads the sanitized NAME via `isPartner()` **without** consent (per L28 the consent flag covers focus *activity*, not identity — you can see a partner's name once paired).
-- `users/{uid}/partner/current`: owner-writable; plus two narrow cross-tree grants — a **pairing** grant (the accepter creates the counterpart's pointer, gated on a valid invite) and the **L30 unpair** grant (a member deletes the pointer that names them, to end the partnership). These are the only writes a user makes outside their own tree.
+- `users/{uid}/partner/current`: owner-writable; plus two narrow cross-tree grants — a **pairing** grant (the accepter creates the counterpart's pointer, gated on a valid invite) and the **L30 unpair** grant (a member deletes the pointer that names them, to end the partnership).
+- `users/{uid}/reactions/{reactorUid}` (M7.2): the reactor cross-tree creates/updates their own reaction gated on `partnerCanRead` (you can only react to a session you're allowed to see); reactor-delete is **ungated** (so a reactor cleans up after unpair — `endPartnership` uses this). The owner reads their received reactions via the recursive grant. These cross-tree writes (pairing pointer, unpair pointer, reaction) are the only writes a user makes outside their own tree.
+- `analytics_events/{eventId}` (M7.2): create-only, `uid == auth.uid`, strict shape; no read/update/delete from any client. **Always-on** (no consent gate) and **not wiped** (create-only by design, like `training_samples`, but uid-linked).
 
 Phase A stays on-device-friendly; only Phase B (stranger-matching, out of MVP scope, conditional on the W8 market read) would require sharing derived data server-side.
 

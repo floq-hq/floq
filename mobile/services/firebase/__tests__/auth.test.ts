@@ -27,6 +27,7 @@ const h = vi.hoisted(() => {
     queryClientClear: vi.fn(),
     deleteAllSessions: vi.fn(),
     deleteAllTrainingSamples: vi.fn(),
+    deleteAllAnalyticsEvents: vi.fn(),
     gConfigure: vi.fn(),
     gHasPlay: vi.fn(),
     gSignIn: vi.fn(),
@@ -65,6 +66,10 @@ vi.mock('../../storage/sessions', () => ({
 vi.mock('../../storage/trainingOutbox', () => ({
   deleteAllTrainingSamples: h.deleteAllTrainingSamples,
 }));
+vi.mock('../../storage/analyticsOutbox', () => ({
+  deleteAllAnalyticsEvents: h.deleteAllAnalyticsEvents,
+}));
+vi.mock('../../presence/presence', () => ({ writePresenceIdle: vi.fn(() => Promise.resolve()) }));
 vi.mock('firebase/auth', () => ({
   initializeAuth: h.initializeAuth,
   getAuth: h.getAuth,
