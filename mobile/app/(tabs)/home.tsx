@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar, Button, Card, ScrollFade, Text, Wordmark } from '../../components/ui';
 import { OfflineIndicator } from '../../components/OfflineIndicator';
 import { TaskSummary } from '../../components/TaskSummary';
+import { PartnerFinishCard } from '../../components/partner/PartnerFinishCard';
 import { FirstTimeVisual } from '../../components/home/FirstTimeVisual';
 import { HeroRing } from '../../components/home/HeroRing';
 import { coachLine, formatLastSession, greeting } from '../../components/home/copy';
@@ -120,6 +121,9 @@ export default function Home() {
           ]}
           showsVerticalScrollIndicator={false}
         >
+          {/* S7.3: "what your partner did" — self-hides when solo / muted / nothing new. */}
+          <PartnerFinishCard />
+
           {state === 'queued' ? (
             <>
               <Text variant="heading">{greeting(Date.now())}</Text>
