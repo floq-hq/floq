@@ -22,6 +22,7 @@ import { useTaskSync } from '../../services/sync/useTaskSync';
 import { useDataWipeSync } from '../../services/sync/useDataWipeSync';
 import { useSettingsSync } from '../../services/sync/useSettingsSync';
 import { useTelemetryFlush } from '../../services/sync/useTelemetryFlush';
+import { useAnalyticsFlush } from '../../services/sync/useAnalyticsFlush';
 
 function AppTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
@@ -52,6 +53,8 @@ export default function TabsLayout() {
   useSettingsSync();
   // L23: best-effort upload of consent-gated, anonymized training samples.
   useTelemetryFlush();
+  // M7.2: best-effort flush of the always-on first-party analytics funnel.
+  useAnalyticsFlush();
 
   return (
     <Tabs

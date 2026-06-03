@@ -19,6 +19,9 @@ vi.mock('firebase/firestore', () => ({
   collection: (_db: unknown, ...path: string[]) => ({ __path: path.join('/') }),
   doc: (_db: unknown, ...path: string[]) => ({ __doc: path.join('/') }),
   getDocs: (...a: unknown[]) => getDocs(...a),
+  // M7.2: the wipe reads the partner pointer to clean a cross-tree reaction.
+  // Default to "solo" (no partner) so existing wipe tests are unaffected.
+  getDoc: () => Promise.resolve({ exists: () => false, data: () => ({}) }),
   writeBatch: () => writeBatchMock(),
   deleteDoc: vi.fn(),
   onSnapshot: vi.fn(),
@@ -44,13 +47,16 @@ beforeEach(() => {
 });
 
 describe('wipeRemoteUserData', () => {
-  it('deletes every doc in users/{uid}/sessions and /tasks, then commits', async () => {
-    // First getDocs call = sessions, second = tasks.
-    getDocs.mockResolvedValueOnce(snapOf(['s1', 's2'])).mockResolvedValueOnce(snapOf(['t1']));
+  it('deletes every doc in users/{uid}/sessions, /tasks, /reactions, then commits', async () => {
+    // getDocs calls in order: sessions, tasks, reactions (M7.2).
+    getDocs
+      .mockResolvedValueOnce(snapOf(['s1', 's2']))
+      .mockResolvedValueOnce(snapOf(['t1']))
+      .mockResolvedValueOnce(snapOf([]));
 
     await wipeRemoteUserData('u1');
 
-    expect(getDocs).toHaveBeenCalledTimes(2);
+    expect(getDocs).toHaveBeenCalledTimes(3);
     expect(batch.delete).toHaveBeenCalledTimes(3); // s1, s2, t1
     expect(batch.commit).toHaveBeenCalled();
   });

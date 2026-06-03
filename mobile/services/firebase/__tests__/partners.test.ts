@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
   writes: [] as Array<[op: string, path: string, data?: unknown]>,
   batchOps: [] as Array<[op: string, path: string, data?: unknown]>,
   projectDisplayName: vi.fn(() => Promise.resolve()),
+  logEvent: vi.fn(),
 }));
 
 vi.mock('../init', () => ({ db: {} }));
@@ -18,6 +19,8 @@ vi.mock('../auth', () => ({ auth: h.auth }));
 // Stub the M7.1 name projection so its fire-and-forget setDoc doesn't pollute the
 // setDoc assertions here; the projection itself is tested in social/__tests__.
 vi.mock('../../social/profile', () => ({ projectDisplayName: h.projectDisplayName }));
+// Stub the M7.2 analytics so logEvent calls are observable + firebase-free.
+vi.mock('../../analytics/logEvent', () => ({ logEvent: h.logEvent }));
 
 vi.mock('firebase/firestore', () => {
   const snapFor = (path: string) => ({
@@ -76,6 +79,7 @@ beforeEach(() => {
   h.writes.length = 0;
   h.batchOps.length = 0;
   h.projectDisplayName.mockClear();
+  h.logEvent.mockClear();
 });
 
 describe('normalizeCode', () => {
@@ -220,7 +224,11 @@ describe('removePartner / blockPartner', () => {
     expect(update?.[2]).toMatchObject({ status: 'ended' });
     expect((update?.[2] as Record<string, unknown>).blocked_by).toBeUndefined();
     const deletes = h.batchOps.filter(([op]) => op === 'delete').map(([, p]) => p);
-    expect(deletes).toEqual([`users/${A}/partner/current`, `users/${B}/partner/current`]);
+    expect(deletes).toEqual([
+      `users/${A}/partner/current`,
+      `users/${B}/partner/current`,
+      `users/${B}/reactions/${A}`, // M7.2: tear down my reaction in the ex-partner's tree
+    ]);
   });
 
   it('blockPartner additionally stamps blocked_by = me', async () => {
@@ -265,5 +273,32 @@ describe('createInvite projects the inviter name (M7.1)', () => {
     h.getDoc.mockResolvedValueOnce({ exists: () => false }); // no collision
     await createInvite();
     expect(h.projectDisplayName).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('M7.2 analytics funnel events', () => {
+  it('createInvite fires invite_created', async () => {
+    h.getDoc.mockResolvedValueOnce({ exists: () => false });
+    await createInvite();
+    expect(h.logEvent).toHaveBeenCalledWith('invite_created');
+  });
+
+  it('acceptInvite fires invite_accepted with already_paired:false on a fresh pair', async () => {
+    h.txDocs.set(`partner_invites/${CODE}`, pendingInvite());
+    await acceptInvite(CODE);
+    expect(h.logEvent).toHaveBeenCalledWith('invite_accepted', { already_paired: false });
+  });
+
+  it('acceptInvite fires invite_accepted with already_paired:true on the idempotent no-op', async () => {
+    h.txDocs.set(`partner_invites/${CODE}`, pendingInvite());
+    h.txDocs.set('partnerships/aaa_bbb', { status: 'active', members: [A, B] });
+    await acceptInvite(CODE);
+    expect(h.logEvent).toHaveBeenCalledWith('invite_accepted', { already_paired: true });
+  });
+
+  it('setShareConsent fires consent_set with the value', async () => {
+    h.getDoc.mockResolvedValueOnce({ exists: () => true, data: () => ({ pair_id: 'aaa_bbb', partner_uid: B }) });
+    await setShareConsent(true);
+    expect(h.logEvent).toHaveBeenCalledWith('consent_set', { value: true });
   });
 });

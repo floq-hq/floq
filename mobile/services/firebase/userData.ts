@@ -21,6 +21,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   onSnapshot,
   serverTimestamp,
@@ -44,7 +45,10 @@ function toMs(value: unknown): number {
 }
 
 /** Delete every doc in a users/{uid} subcollection, in batches. */
-async function deleteSubcollection(uid: string, sub: 'sessions' | 'tasks'): Promise<void> {
+async function deleteSubcollection(
+  uid: string,
+  sub: 'sessions' | 'tasks' | 'reactions',
+): Promise<void> {
   const snap = await getDocs(collection(db, 'users', uid, sub));
   const docs = snap.docs;
   for (let i = 0; i < docs.length; i += BATCH_LIMIT) {
@@ -64,6 +68,21 @@ async function deleteSubcollection(uid: string, sub: 'sessions' | 'tasks'): Prom
 export async function wipeRemoteUserData(uid: string): Promise<void> {
   await deleteSubcollection(uid, 'sessions');
   await deleteSubcollection(uid, 'tasks');
+  // M7.2: reactions I RECEIVED (my own subtree) + my live reaction in my current
+  // partner's tree (the ungated reactor-delete grant authorizes the latter).
+  // analytics_events is uid-linked but create-only by design (NOT deletable —
+  // like training_samples), so it's intentionally not part of the wipe. A
+  // reaction orphaned in an ENDED partner's tree is unreachable post-unpair but
+  // invisible (the ended edge denies all reads) — endPartnership cleans the live
+  // one at unpair time.
+  await deleteSubcollection(uid, 'reactions');
+  try {
+    const ptr = await getDoc(doc(db, 'users', uid, 'partner', 'current'));
+    const partnerUid = ptr.exists() ? (ptr.data().partner_uid as string | undefined) : undefined;
+    if (partnerUid) await deleteDoc(doc(db, 'users', partnerUid, 'reactions', uid));
+  } catch {
+    // best-effort cross-tree cleanup; the wipe proper (own subtrees) already ran
+  }
   // Mark self-initiated BEFORE the write so our OWN tombstone echo (which arrives
   // via useDataWipeSync) only advances the marker and does not re-run the local
   // wipe over anything created right after the clear. Set only after the deletes

@@ -131,6 +131,21 @@ export async function seedSocial(
   await setDoc(doc(db, 'users', uid, 'social', kind), data);
 }
 
+/** Seed a reaction doc users/{ownerUid}/reactions/{reactorUid} directly (admin). */
+export async function seedReaction(
+  db: Firestore,
+  ownerUid: string,
+  reactorUid: string,
+  data: Record<string, unknown> = { kind: 'fire' },
+): Promise<void> {
+  const { Timestamp } = await import('firebase/firestore');
+  await setDoc(doc(db, 'users', ownerUid, 'reactions', reactorUid), {
+    reacted_at: Timestamp.now(),
+    session_ended_at: Timestamp.now(),
+    ...data,
+  });
+}
+
 /** Seed a partner pointer doc directly (admin). */
 export async function seedPointer(
   db: Firestore,

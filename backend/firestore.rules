@@ -84,6 +84,36 @@ service cloud.firestore {
       allow read: if isSignedIn() && (request.auth.uid == ownerUid || isPartner(ownerUid));
     }
 
+    // M7.2 — one-tap fire/clap reaction on a partner's finished session. Doc id ==
+    // the REACTOR's uid (idempotent: a re-react overwrites; one live reaction per
+    // direction). The OWNER's own read/write/delete rides the recursive users/{uid}
+    // grant; this match ADDS the cross-tree reactor cases. get budget: 1 (the
+    // partnership, via partnerCanRead — reuses the doc isPartner fetches, +0).
+    match /users/{ownerUid}/reactions/{reactorUid} {
+      // Owner reads received reactions via the recursive grant; this adds the
+      // reactor reading their own (to know they already reacted).
+      allow read: if isSignedIn()
+        && (request.auth.uid == ownerUid || request.auth.uid == reactorUid);
+
+      // Cross-tree create/update: only the reactor, never self-react, only to a
+      // session they're ALLOWED TO SEE (partnerCanRead == consent + active edge).
+      // hasAll pins presence (so kind can't be omitted); hasOnly bounds the keys.
+      allow create, update: if isSignedIn()
+        && request.auth.uid == reactorUid
+        && request.auth.uid != ownerUid
+        && partnerCanRead(ownerUid)
+        && request.resource.data.keys().hasAll(['kind', 'reacted_at', 'session_ended_at'])
+        && request.resource.data.keys().hasOnly(['kind', 'reacted_at', 'session_ended_at'])
+        && request.resource.data.kind in ['fire', 'clap']
+        && request.resource.data.reacted_at == request.time
+        && request.resource.data.session_ended_at is timestamp;
+
+      // UNGATED reactor delete — a reactor can always remove their OWN reaction,
+      // even after the partnership ends (load-bearing for the wipe/unpair cleanup).
+      // Owner delete rides the recursive grant.
+      allow delete: if isSignedIn() && request.auth.uid == reactorUid;
+    }
+
     // M7.1 — coarse live presence. Owner write/delete; a CONSENTED active partner
     // reads. Staleness/decay is a client concern (derivePresence) — the rule just
     // gates WHO can read whatever state is stored.
@@ -249,6 +279,30 @@ service cloud.firestore {
         && request.resource.data.features is list
         && request.resource.data.features.size() == 13
         && request.resource.data.regime in ['cold', 'warming', 'mature'];
+      allow read, update, delete: if false;
+    }
+
+    // M7.2 — always-on first-party analytics funnel sink (NO consent gate — this
+    // is the W8 Axis-A instrument; gating it default-OFF would zero the funnel).
+    // Create-only, strict shape. UNLIKE training_samples this doc is uid-LINKED
+    // (carries `uid`) and is NOT wiped (create-only by design). The L4 boundary:
+    // `name` is a bounded enum string + `props` a shallow primitive map, both
+    // client-disciplined — a rule cannot deep-inspect a map, so this caps the
+    // blast radius (no titles / free text / display name).
+    match /analytics_events/{eventId} {
+      allow create: if request.auth != null
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid', 'name', 'ts', 'seq', 'kind', 'props'])
+        && request.resource.data.keys().hasAll(['uid', 'name', 'ts', 'seq', 'kind', 'props'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 64
+        && request.resource.data.kind is string
+        && request.resource.data.kind.size() <= 32
+        && request.resource.data.props is map
+        && request.resource.data.props.size() <= 16
+        && request.resource.data.ts is number
+        && request.resource.data.seq is number;
       allow read, update, delete: if false;
     }
 

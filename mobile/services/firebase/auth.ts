@@ -37,6 +37,7 @@ import { useTaskStore } from '../../stores/useTaskStore';
 import { queryClient } from '../queryClient';
 import { deleteAllSessions } from '../storage/sessions';
 import { deleteAllTrainingSamples } from '../storage/trainingOutbox';
+import { deleteAllAnalyticsEvents } from '../storage/analyticsOutbox';
 import { clearWipeMarker } from '../sync/wipeMarker';
 import { writePresenceIdle } from '../presence/presence';
 
@@ -228,6 +229,9 @@ export async function signOut(): Promise<void> {
   // L23: the local ML training outbox is also unfiltered by uid — clear it so
   // User A's un-uploaded samples never flush under User B's account.
   deleteAllTrainingSamples();
+  // M7.2: same for the analytics funnel outbox — User A's un-flushed events must
+  // never upload under User B (the flush also guards on uid, but clear regardless).
+  deleteAllAnalyticsEvents();
   // L27: the cross-device wipe markers (floq.dataClearedAt[.self]) are device-
   // global, not uid-scoped. If they survive sign-out, User A's stale selfInitiated
   // flag can make User B's tombstone echo 'record' instead of 'wipe' (a real clear
