@@ -13,9 +13,12 @@
 //   pendingSent  — I minted an invite that's still pending (waiting on a friend)
 //   paired       — my pointer exists + the partnership is active
 //
-// `partnerName` + `dormant` depend on the M7.1 social-summary projection (NOT
-// landed): we best-effort read users/{partnerUid}/social/summary and degrade to
-// name=null / dormant=false until it ships. See S7.1.
+// `partnerName` comes from the M7.1 name projection at users/{partnerUid}/
+// social/profile; `dormant` is "no users/{partnerUid}/social/summary yet" (the
+// partner has never finished a session). Both reads are best-effort — a consent
+// or rule denial degrades to name=null / dormant=true rather than throwing. The
+// live partner *view* (presence + summary + reactions) is PartnerView (S7.1);
+// this read only powers the tab's solo/pending/paired state machine + identity.
 
 import { doc, getDoc } from 'firebase/firestore';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
@@ -41,27 +44,25 @@ function toMillis(v: unknown): number | null {
   return typeof v === 'number' ? v : null;
 }
 
-/** Best-effort partner display name + activity from the M7.1 social summary.
- *  Returns nulls (name) / false (dormant) until that projection lands. */
+/** Best-effort partner identity + activity from the M7.1 projections.
+ *  Name lives in social/profile (isPartner-gated, no consent needed); activity
+ *  is the existence of social/summary (consent-gated — written on first finish).
+ *  Either denial/miss degrades to name=null / hasFocused=false. */
 async function readPartnerSummary(
   partnerUid: string,
 ): Promise<{ name: string | null; hasFocused: boolean }> {
-  try {
-    const snap = await getDoc(doc(db, 'users', partnerUid, 'social', 'summary'));
-    if (!snap.exists()) return { name: null, hasFocused: false };
-    const d = snap.data() as Record<string, unknown>;
-    const name =
-      typeof d.display_name === 'string'
-        ? d.display_name
-        : typeof d.name === 'string'
-          ? d.name
-          : null;
-    // M7.1 will write a session count / last-active; treat any positive as "has focused".
-    const sessions = typeof d.sessions_count === 'number' ? d.sessions_count : 0;
-    return { name, hasFocused: sessions > 0 };
-  } catch {
-    return { name: null, hasFocused: false };
-  }
+  const [name, hasFocused] = await Promise.all([
+    getDoc(doc(db, 'users', partnerUid, 'social', 'profile'))
+      .then((snap) => {
+        const dn = (snap.data() as { display_name?: unknown } | undefined)?.display_name;
+        return typeof dn === 'string' ? dn : null;
+      })
+      .catch(() => null),
+    getDoc(doc(db, 'users', partnerUid, 'social', 'summary'))
+      .then((snap) => snap.exists())
+      .catch(() => false),
+  ]);
+  return { name, hasFocused };
 }
 
 export async function getPartnerStatus(uid: string): Promise<PartnerStatus> {
