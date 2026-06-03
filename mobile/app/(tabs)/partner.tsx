@@ -69,7 +69,11 @@ export default function PartnerTab() {
             <ActivityIndicator color={theme.accent} />
           </View>
         ) : status.state === 'paired' ? (
-          <PartnerView partnerUid={status.partnerUid} fallbackName={status.partnerName} />
+          <PartnerView
+            partnerUid={status.partnerUid}
+            pairId={status.pairId}
+            fallbackName={status.partnerName}
+          />
         ) : status.state === 'pendingSent' ? (
           <PendingInviteCard code={status.code} />
         ) : (

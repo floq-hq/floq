@@ -4,6 +4,7 @@ import {
   canReact,
   formatWhen,
   presenceDisplay,
+  shouldShowStartTogether,
 } from '../partnerViewModel';
 import type { DerivedPresence } from '../../presence/derivePresence';
 
@@ -57,6 +58,19 @@ describe('canReact', () => {
     expect(canReact(0)).toBe(false);
     expect(canReact(null)).toBe(false);
     expect(canReact(undefined)).toBe(false);
+  });
+});
+
+describe('shouldShowStartTogether', () => {
+  it('shows only when the partner is focusing AND I am not mid-session', () => {
+    expect(shouldShowStartTogether({ state: 'focusing', phase: 'flow' }, false)).toBe(true);
+  });
+  it('hidden when I am already in a session (the focused middle is sacred)', () => {
+    expect(shouldShowStartTogether({ state: 'focusing', phase: 'flow' }, true)).toBe(false);
+  });
+  it('hidden when the partner is idle or just finished (silent otherwise)', () => {
+    expect(shouldShowStartTogether({ state: 'idle' }, false)).toBe(false);
+    expect(shouldShowStartTogether({ state: 'just_finished' }, false)).toBe(false);
   });
 });
 

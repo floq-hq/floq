@@ -52,6 +52,7 @@ import { notifySuccess } from '../services/haptics';
 import { startBackgroundPolicy } from '../services/session/backgroundPolicy';
 import { backgroundDistractionMessage } from '../services/session/backgroundNotice';
 import { scheduleBreakReminder } from '../services/notifications';
+import { maybeRequestSocialNotifPermission } from '../services/partner/notifSocialPrompt';
 import { queryClient } from '../services/queryClient';
 import { statsKeys } from '../services/stats/useStats';
 import { useTaskStore } from '../stores/useTaskStore';
@@ -250,6 +251,11 @@ export default function SessionScreen() {
     // app open). Silent no-op if permission is denied. PR3: useStartSession +
     // /recovery's Skip both cancel this so it never fires mid-Session 2.
     void scheduleBreakReminder(completed.plan.breakMinutes);
+
+    // S7.2: decoupled from the consent toggle — ask for the OS notification
+    // permission for social pings at the user's SECOND session-end (the first
+    // already prompts above for the break reminder). Once; fire-and-forget.
+    void maybeRequestSocialNotifPermission('session-end');
 
     router.replace({
       pathname: '/session-summary',

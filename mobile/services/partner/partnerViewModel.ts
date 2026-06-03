@@ -63,6 +63,19 @@ export function canReact(summaryEndedAt: number | null | undefined): boolean {
   return typeof summaryEndedAt === 'number' && summaryEndedAt > 0;
 }
 
+/**
+ * S7.2 beat-1 surface gate. The "[partner] is focusing — start one too?" prompt
+ * renders ONLY when the partner is freshly live-focusing (presence already
+ * freshness-clamped by derivePresence) AND I am NOT mid-session — the focused
+ * middle is sacred; we never nudge a session from inside another one.
+ */
+export function shouldShowStartTogether(
+  presence: DerivedPresence,
+  hasActiveSession: boolean,
+): boolean {
+  return presence.state === 'focusing' && !hasActiveSession;
+}
+
 const PHASES: readonly Phase[] = ['struggle', 'release', 'flow', 'recovery'];
 
 /** Narrow an untrusted `phase_at_end` string to a Phase, defaulting to `flow`
