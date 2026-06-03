@@ -20,9 +20,8 @@
 // live partner *view* (presence + summary + reactions) is PartnerView (S7.1);
 // this read only powers the tab's solo/pending/paired state machine + identity.
 
-import { useEffect } from 'react';
-import { doc, getDoc, onSnapshot } from 'firebase/firestore';
-import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
+import { doc, getDoc } from 'firebase/firestore';
+import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { db, useCurrentUser } from '../firebase';
 import { getMyInviteCode, clearMyInviteCode } from './localInvite';
 
@@ -108,27 +107,6 @@ export async function getPartnerStatus(uid: string): Promise<PartnerStatus> {
 export function usePartnerStatus(): UseQueryResult<PartnerStatus> {
   const { user } = useCurrentUser();
   const uid = user?.uid;
-  const qc = useQueryClient();
-
-  // Live tab state, cross-device. The OWN partner pointer (owner-readable) is
-  // CREATED when I get paired — including the cross-tree write an accepter makes,
-  // which is how an inviter waiting on `pendingSent` flips to `paired` — and
-  // DELETED when my partner unpairs/blocks me. onSnapshot it and invalidate the
-  // status query so the tab flips solo↔paired in real time without an app restart.
-  useEffect(() => {
-    if (!uid) return;
-    return onSnapshot(
-      doc(db, 'users', uid, 'partner', 'current'),
-      () => void qc.invalidateQueries({ queryKey: ['partner', 'status', uid] }),
-      (error) => {
-        if (typeof __DEV__ !== 'undefined' && __DEV__) {
-          // eslint-disable-next-line no-console
-          console.warn('[partner] pointer listener error', error);
-        }
-      },
-    );
-  }, [uid, qc]);
-
   return useQuery({
     queryKey: ['partner', 'status', uid],
     queryFn: () => getPartnerStatus(uid as string),
