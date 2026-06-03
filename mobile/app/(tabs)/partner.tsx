@@ -9,19 +9,21 @@
  *   solo        → invite a friend (createInvite) + enter a code (InviteCodeField)
  *                 + the non-inert "I want a partner" intent toggle
  *   pendingSent → the minted code, shareable, cancellable (PendingInviteCard)
- *   paired      → confirmation + partner identity (+ dormant copy until M7.1's
- *                 partner-activity projection lands; the partner *view* is S7.1)
+ *   paired      → the partner view: live presence + last-session summary + a
+ *                 one-tap reaction (PartnerView, S7.1)
  *
- * Partner view / presence / reactions / remove-block are S7.1–S7.3.
+ * The pairing-consent prompt + beat-1 "start one too?" surface are S7.2;
+ * the inbound finish card + mute/remove/block are S7.3.
  */
 import { useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
-import { Button, Card, Text } from '../../components/ui';
+import { Button, Text } from '../../components/ui';
 import { TabHeader, TAB_PADDING, tabHeaderTopPadding } from '../../components/TabHeader';
 import { InviteCodeField } from '../../components/partner/InviteCodeField';
 import { PendingInviteCard } from '../../components/partner/PendingInviteCard';
+import { PartnerView } from '../../components/partner/PartnerView';
 import { createInvite, useCurrentUser } from '../../services/firebase';
 import { setMyInviteCode, getWantPartner, setWantPartner } from '../../services/partner/localInvite';
 import { partnerKeys, usePartnerStatus } from '../../services/partner/usePartnerStatus';
@@ -67,19 +69,7 @@ export default function PartnerTab() {
             <ActivityIndicator color={theme.accent} />
           </View>
         ) : status.state === 'paired' ? (
-          <Card>
-            <Text variant="caption" color={theme.textMuted}>
-              YOUR PARTNER
-            </Text>
-            <Text variant="title" style={styles.partnerName}>
-              {status.partnerName ?? 'Paired'}
-            </Text>
-            <Text variant="body" color={theme.textMuted}>
-              {status.dormant
-                ? `${status.partnerName ?? 'They'} joined — they haven’t focused yet. Their sessions will show up here once they do.`
-                : 'You can focus together now. Their recent sessions will appear here soon.'}
-            </Text>
-          </Card>
+          <PartnerView partnerUid={status.partnerUid} fallbackName={status.partnerName} />
         ) : status.state === 'pendingSent' ? (
           <PendingInviteCard code={status.code} />
         ) : (
@@ -128,7 +118,6 @@ const styles = StyleSheet.create({
   content: { gap: 16, paddingBottom: 32 },
   center: { paddingVertical: 48, alignItems: 'center' },
   intro: {},
-  partnerName: { marginVertical: 4 },
   dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   rule: { flex: 1, height: StyleSheet.hairlineWidth },
   wantRow: {
