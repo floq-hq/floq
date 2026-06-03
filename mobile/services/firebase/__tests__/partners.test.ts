@@ -6,8 +6,9 @@ const h = vi.hoisted(() => ({
   getDoc: vi.fn(),
   setDoc: vi.fn(),
   updateDoc: vi.fn(),
-  // tx.get reads from here; writes are captured in `writes`.
+  // tx.get reads from here; writes are captured in `writes`; tx.get paths in `reads`.
   txDocs: new Map<string, unknown>(),
+  reads: [] as string[],
   writes: [] as Array<[op: string, path: string, data?: unknown]>,
   batchOps: [] as Array<[op: string, path: string, data?: unknown]>,
   projectDisplayName: vi.fn(() => Promise.resolve()),
@@ -36,7 +37,10 @@ vi.mock('firebase/firestore', () => {
     Timestamp: { fromMillis: (ms: number) => ({ toMillis: () => ms }) },
     runTransaction: (_db: unknown, fn: (tx: unknown) => unknown) =>
       fn({
-        get: (ref: { path: string }) => Promise.resolve(snapFor(ref.path)),
+        get: (ref: { path: string }) => {
+          h.reads.push(ref.path);
+          return Promise.resolve(snapFor(ref.path));
+        },
         set: (ref: { path: string }, data: unknown) => h.writes.push(['set', ref.path, data]),
         update: (ref: { path: string }, data: unknown) => h.writes.push(['update', ref.path, data]),
       }),
@@ -76,6 +80,7 @@ beforeEach(() => {
   h.setDoc.mockReset();
   h.updateDoc.mockReset();
   h.txDocs.clear();
+  h.reads.length = 0;
   h.writes.length = 0;
   h.batchOps.length = 0;
   h.projectDisplayName.mockClear();
@@ -165,27 +170,23 @@ describe('acceptInvite — rejections', () => {
     h.txDocs.set(`users/${A}/partner/current`, { pair_id: 'x', partner_uid: 'z' });
     await expect(acceptInvite(CODE)).rejects.toMatchObject({ reason: 'already-paired' });
   });
-  it("inviter's pointer already exists → inviter-already-paired", async () => {
+});
+
+describe('acceptInvite — cross-device read safety (the "offline" pairing bug)', () => {
+  // The accepter may only READ the invite + their OWN pointer. The inviter's
+  // pointer and the not-yet-existing partnership are NOT accepter-readable — a
+  // tx.get on either is permission-denied on a real device and breaks pairing.
+  it('does NOT tx.get the inviter pointer or the partnership doc', async () => {
     h.txDocs.set(`partner_invites/${CODE}`, pendingInvite());
-    h.txDocs.set(`users/${B}/partner/current`, { pair_id: 'x', partner_uid: 'z' });
-    await expect(acceptInvite(CODE)).rejects.toMatchObject({ reason: 'inviter-already-paired' });
-  });
-  it('ended partnership → ended', async () => {
-    h.txDocs.set(`partner_invites/${CODE}`, pendingInvite());
-    h.txDocs.set('partnerships/aaa_bbb', { status: 'ended', members: [A, B] });
-    await expect(acceptInvite(CODE)).rejects.toMatchObject({ reason: 'ended' });
+    await acceptInvite(CODE);
+    expect(h.reads).not.toContain(`users/${B}/partner/current`); // inviter pointer
+    expect(h.reads).not.toContain('partnerships/aaa_bbb'); // not-yet-existing partnership
+    // only the two allowed reads:
+    expect(h.reads).toEqual([`partner_invites/${CODE}`, `users/${A}/partner/current`]);
   });
 });
 
-describe('acceptInvite — idempotency + success', () => {
-  it('returns a no-op when the same active partnership already exists', async () => {
-    h.txDocs.set(`partner_invites/${CODE}`, pendingInvite());
-    h.txDocs.set('partnerships/aaa_bbb', { status: 'active', members: [A, B] });
-    const r = await acceptInvite(CODE);
-    expect(r).toEqual({ pairId: 'aaa_bbb', alreadyPaired: true });
-    expect(h.writes).toHaveLength(0); // pure no-op
-  });
-
+describe('acceptInvite — success', () => {
   it('creates the partnership, both pointers, and flips the invite', async () => {
     h.txDocs.set(`partner_invites/${CODE}`, pendingInvite());
     const r = await acceptInvite(CODE);
@@ -283,17 +284,10 @@ describe('M7.2 analytics funnel events', () => {
     expect(h.logEvent).toHaveBeenCalledWith('invite_created');
   });
 
-  it('acceptInvite fires invite_accepted with already_paired:false on a fresh pair', async () => {
+  it('acceptInvite fires invite_accepted on a fresh pair', async () => {
     h.txDocs.set(`partner_invites/${CODE}`, pendingInvite());
     await acceptInvite(CODE);
     expect(h.logEvent).toHaveBeenCalledWith('invite_accepted', { already_paired: false });
-  });
-
-  it('acceptInvite fires invite_accepted with already_paired:true on the idempotent no-op', async () => {
-    h.txDocs.set(`partner_invites/${CODE}`, pendingInvite());
-    h.txDocs.set('partnerships/aaa_bbb', { status: 'active', members: [A, B] });
-    await acceptInvite(CODE);
-    expect(h.logEvent).toHaveBeenCalledWith('invite_accepted', { already_paired: true });
   });
 
   it('setShareConsent fires consent_set with the value', async () => {
