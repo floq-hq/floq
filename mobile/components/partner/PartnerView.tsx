@@ -43,10 +43,12 @@ import {
   shouldShowStartTogether,
 } from '../../services/partner/partnerViewModel';
 import { maybeRequestSocialNotifPermission } from '../../services/partner/notifSocialPrompt';
+import { useMutePartner } from '../../services/partner/mutePartner';
 import { logEvent } from '../../services/analytics/logEvent';
 import { useActiveSessionStore } from '../../stores/useActiveSessionStore';
 import { StartTogetherPrompt } from './StartTogetherPrompt';
 import { ShareConsentToggle } from './ShareConsentToggle';
+import { PartnershipActions } from './PartnershipActions';
 
 const REACTIONS: { kind: ReactionKind; glyph: string; label: string }[] = [
   { kind: 'fire', glyph: '🔥', label: 'Send fire reaction' },
@@ -67,9 +69,13 @@ export function PartnerView({
   /** Name from the status read; the live profile hook refines it once it resolves. */
   fallbackName?: string | null;
 }) {
-  const presence = usePartnerPresence(partnerUid);
-  const { data: summary } = usePartnerSummary(partnerUid);
-  const { data: profile } = usePartnerProfile(partnerUid);
+  const { muted, setMuted } = useMutePartner(pairId);
+  // Mute tears down the live surface: passing undefined unsubscribes the presence
+  // listener and disables the summary/profile reads (their existing partnerUid gate).
+  const liveUid = muted ? undefined : partnerUid;
+  const presence = usePartnerPresence(liveUid);
+  const { data: summary } = usePartnerSummary(liveUid);
+  const { data: profile } = usePartnerProfile(liveUid);
   const hasActiveSession = useActiveSessionStore((s) => s.active != null);
 
   const name = profile?.displayName ?? fallbackName ?? 'Your partner';
@@ -104,18 +110,42 @@ export function PartnerView({
 
   return (
     <View style={styles.stack}>
-      {shouldShowStartTogether(presence, hasActiveSession) && (
+      {!muted && shouldShowStartTogether(presence, hasActiveSession) && (
         <StartTogetherPrompt partnerName={name} onStart={onStartTogether} />
       )}
-      <PartnerViewContent
-        name={name}
-        presence={presence}
-        summary={summary ?? null}
-        reacted={reacted}
-        onReact={onReact}
-      />
+      {muted ? (
+        <MutedCard name={name} />
+      ) : (
+        <PartnerViewContent
+          name={name}
+          presence={presence}
+          summary={summary ?? null}
+          reacted={reacted}
+          onReact={onReact}
+        />
+      )}
       <ShareConsentToggle pairId={pairId} partnerName={name} />
+      <PartnershipActions partnerName={name} muted={muted} onToggleMute={setMuted} />
     </View>
+  );
+}
+
+/** Quiet stand-in for the partner card while muted — no live reads behind it. */
+function MutedCard({ name }: { name: string }) {
+  const theme = useTheme();
+  return (
+    <Card>
+      <Text variant="caption" color={theme.textMuted}>
+        YOUR PARTNER
+      </Text>
+      <Text variant="title" style={styles.name} numberOfLines={1}>
+        {name}
+      </Text>
+      <Text variant="body" color={theme.textMuted} style={styles.mutedBody}>
+        Muted — you won’t see {name}’s presence or sessions. You’re still paired;
+        turn the toggle below back on whenever you like.
+      </Text>
+    </Card>
   );
 }
 
@@ -231,6 +261,7 @@ function Metric({ value, unit }: { value: string; unit: string }) {
 
 const styles = StyleSheet.create({
   stack: { gap: 16 },
+  mutedBody: { marginTop: 8 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerText: { flex: 1, gap: 2 },
   name: {},
