@@ -76,6 +76,15 @@ export async function wipeRemoteUserData(uid: string): Promise<void> {
   // invisible (the ended edge denies all reads) — endPartnership cleans the live
   // one at unpair time.
   await deleteSubcollection(uid, 'reactions');
+  // M7.1 partner-visible projections: "Clear history" must also erase what a
+  // CURRENT partner can still read, or a wiped user's last-session minutes/score
+  // (social/summary) and live state (presence) stay visible on their partner's
+  // device. All three are own-tree (owner-only rules authorize the delete).
+  await Promise.all([
+    deleteDoc(doc(db, 'users', uid, 'social', 'summary')),
+    deleteDoc(doc(db, 'users', uid, 'social', 'profile')),
+    deleteDoc(doc(db, 'presence', uid)),
+  ]);
   try {
     const ptr = await getDoc(doc(db, 'users', uid, 'partner', 'current'));
     const partnerUid = ptr.exists() ? (ptr.data().partner_uid as string | undefined) : undefined;

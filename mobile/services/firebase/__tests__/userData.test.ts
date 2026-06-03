@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-const { getDocs, writeBatchMock, batch, setDoc, serverTimestamp, setWipeSelfInitiated } = vi.hoisted(
+const { getDocs, writeBatchMock, batch, setDoc, serverTimestamp, setWipeSelfInitiated, deleteDoc } = vi.hoisted(
   () => {
     const batch = { delete: vi.fn(), commit: vi.fn(() => Promise.resolve()) };
     return {
@@ -10,6 +10,7 @@ const { getDocs, writeBatchMock, batch, setDoc, serverTimestamp, setWipeSelfInit
       setDoc: vi.fn((..._a: unknown[]) => Promise.resolve()),
       serverTimestamp: vi.fn(() => '__server_ts__'),
       setWipeSelfInitiated: vi.fn(),
+      deleteDoc: vi.fn((..._a: unknown[]) => Promise.resolve()),
     };
   },
 );
@@ -23,7 +24,7 @@ vi.mock('firebase/firestore', () => ({
   // Default to "solo" (no partner) so existing wipe tests are unaffected.
   getDoc: () => Promise.resolve({ exists: () => false, data: () => ({}) }),
   writeBatch: () => writeBatchMock(),
-  deleteDoc: vi.fn(),
+  deleteDoc: (...a: unknown[]) => deleteDoc(...a),
   onSnapshot: vi.fn(),
   setDoc: (...a: unknown[]) => setDoc(...a),
   serverTimestamp: () => serverTimestamp(),
@@ -44,9 +45,19 @@ beforeEach(() => {
   setDoc.mockClear();
   serverTimestamp.mockClear();
   setWipeSelfInitiated.mockClear();
+  deleteDoc.mockClear();
 });
 
 describe('wipeRemoteUserData', () => {
+  it('deletes the partner-visible projections (social/summary, social/profile, presence) so a partner cannot read a wiped user', async () => {
+    getDocs.mockResolvedValue(snapOf([]));
+    await wipeRemoteUserData('u1');
+    const deleted = deleteDoc.mock.calls.map(([ref]) => (ref as { __doc: string }).__doc);
+    expect(deleted).toContain('users/u1/social/summary');
+    expect(deleted).toContain('users/u1/social/profile');
+    expect(deleted).toContain('presence/u1');
+  });
+
   it('deletes every doc in users/{uid}/sessions, /tasks, /reactions, then commits', async () => {
     // getDocs calls in order: sessions, tasks, reactions (M7.2).
     getDocs
