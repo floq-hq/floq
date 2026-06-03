@@ -12,9 +12,12 @@
 
 import type { AcceptReason } from '../firebase';
 
+// 'offline' (true connectivity drop) and 'failed' (a server rejection / unexpected
+// error — e.g. permission-denied) are synthetic: acceptInvite never throws them,
+// the call site maps a non-AcceptError to one or the other (see acceptError.ts).
 export type AcceptOutcome =
   | { kind: 'paired'; alreadyPaired: boolean }
-  | { kind: 'error'; reason: AcceptReason | 'offline' };
+  | { kind: 'error'; reason: AcceptReason | 'offline' | 'failed' };
 
 export type ClaimAction = 'retry' | 'edit' | 'dismiss';
 export type ClaimTone = 'success' | 'neutral' | 'danger';
@@ -54,6 +57,15 @@ export function claimCopy(outcome: AcceptOutcome): ClaimCopy {
         action: 'retry',
         actionLabel: 'Retry',
         tone: 'neutral',
+      };
+    case 'failed':
+      return {
+        // A server rejection / unexpected error — honestly NOT "offline".
+        title: "That didn't go through",
+        body: "Something went wrong on our end. Give it another try in a moment — if it keeps happening, let us know.",
+        action: 'retry',
+        actionLabel: 'Retry',
+        tone: 'danger',
       };
     case 'bad-code':
       return {

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { claimCopy, type AcceptOutcome } from '../claimCopy';
 import type { AcceptReason } from '../../firebase';
 
-const REASONS: (AcceptReason | 'offline')[] = [
+const REASONS: (AcceptReason | 'offline' | 'failed')[] = [
   'code-not-found',
   'self-pair',
   'revoked',
@@ -13,6 +13,7 @@ const REASONS: (AcceptReason | 'offline')[] = [
   'not-signed-in',
   'bad-code',
   'offline',
+  'failed',
 ];
 
 describe('claimCopy', () => {
@@ -42,6 +43,14 @@ describe('claimCopy', () => {
   it('offline offers Retry (the code is persisted for the seam)', () => {
     const c = claimCopy({ kind: 'error', reason: 'offline' });
     expect(c.action).toBe('retry');
+  });
+
+  it('failed (a server rejection) does NOT claim the user is offline', () => {
+    const c = claimCopy({ kind: 'error', reason: 'failed' });
+    expect(c.action).toBe('retry');
+    expect(c.tone).toBe('danger');
+    expect(c.title.toLowerCase()).not.toContain('offline');
+    expect(c.body.toLowerCase()).not.toContain('offline');
   });
 
   it('terminal states (already-paired, not-signed-in) do not invite a retry', () => {

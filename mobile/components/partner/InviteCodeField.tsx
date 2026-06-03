@@ -25,6 +25,7 @@ import {
   claimCopy,
   type AcceptOutcome,
 } from '../../services/partner/claimCopy';
+import { isOfflineError } from '../../services/partner/acceptError';
 import {
   clearPendingAcceptCode,
   getPendingAcceptCode,
@@ -62,9 +63,12 @@ export function InviteCodeField({
         if (e.reason !== 'bad-code') clearPendingAcceptCode();
         setOutcome({ kind: 'error', reason: e.reason });
       } else {
-        // Network / unknown at the install→pair seam: keep the code for Retry.
+        // A non-AcceptError. Only a genuine connectivity drop is 'offline'; a
+        // server rejection (e.g. permission-denied) is 'failed' — don't claim
+        // the user is offline on a live connection. Keep the code for Retry either
+        // way (a transient error may clear).
         setPendingAcceptCode(raw);
-        setOutcome({ kind: 'error', reason: 'offline' });
+        setOutcome({ kind: 'error', reason: isOfflineError(e) ? 'offline' : 'failed' });
       }
     } finally {
       setSubmitting(false);
